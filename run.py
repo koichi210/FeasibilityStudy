@@ -31,4 +31,14 @@ if __name__ == "__main__":
     host = "0.0.0.0" if args.lan else "127.0.0.1"
     if not args.no_browser:
         webbrowser.open("http://localhost:{}/".format(args.port))
-    main(host=host, port=args.port)
+    try:
+        main(host=host, port=args.port)
+    except KeyboardInterrupt:
+        print("\n  サーバーを停止しました。またあそんでね！🎴")
+    except OSError as e:
+        # ポートが埋まっているケースが圧倒的に多いので、そこだけ案内する
+        print("\n  ❌ 起動に失敗しました: {}".format(e))
+        print("  ポート {} が別のプログラムに使われている可能性があります。".format(args.port))
+        print("  すでに開いているゲームの黒い画面を閉じてから、もう一度試してください。")
+        print("  それでもダメなら:  py -3 run.py --port 5001")
+        input("\n  Enter を押すと閉じます ")

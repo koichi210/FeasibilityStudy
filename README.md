@@ -124,4 +124,10 @@ py -3 tools\gen_cardlist.py     # カードリストmdを再生成
   （`python` は Windows ストアのダミーに繋がってしまう環境のため）
 - 依存ライブラリは **Flask のみ**（インストール済み）
 - ソース・JSON・md はすべて **UTF-8**
+- ⚠️ **`tools\*.ps1` を編集したら、必ず「UTF-8(BOM付き)」で保存すること**。
+  Windows PowerShell 5.1 は BOM無しUTF-8 のスクリプトを日本語Windowsの文字コードとして
+  読んでしまい、日本語コメントがスクリプトの構文を壊す。
+  （VS Codeなら右下の「UTF-8」→「エンコード付きで保存」→「UTF-8 with BOM」）
+- git は単体インストールされておらず、**GitHub Desktop 同梱のもの**を使っている。
+  `tools\_git.ps1` が自動で探すので普段は意識しなくてよい
 - バランスを変えたら `simulate.py` で影響を確認する習慣をつけると事故が減る

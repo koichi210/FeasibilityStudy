@@ -1,0 +1,80 @@
+{
+  "_comment": "ゲームの数値パラメータ。ここだけ触ればバランス調整できる。コードは触らなくてよい。",
+
+  "trainer_hp": 200,
+  "monster_hp": 100,
+  "min_damage": 10,
+  "kill_trainer_damage": 30,
+
+  "bench_size": 2,
+  "hand_size_max": 5,
+  "item_draw_per_turn": 1,
+  "initial_hand_size": 3,
+  "attacks_before_retire": 2,
+  "fatigue_turns": 2,
+
+  "suit_modifier": {
+    "S": { "atk": 30, "def": -30 },
+    "H": { "atk": -20, "def": 20 },
+    "D": { "atk": 20, "def": -20 },
+    "C": { "atk": 0, "def": 0 }
+  },
+
+  "stat_min": 10,
+  "rank_base_multiplier": 10,
+
+  "demon_lord": {
+    "hp": 250,
+    "atk": 150,
+    "def": 150,
+    "turns": 3
+  },
+
+  "ability_values": {
+    "D_J_splash": 20,
+    "H_J_regen": 20,
+    "S_J_reckless_bonus": 50,
+    "S_J_reckless_recoil": 30,
+    "D_Q_pierce_rate": 0.5,
+    "H_Q_guard": 30,
+    "C_Q_draw": 2,
+    "S_Q_poison": 20,
+    "D_K_trainer_damage": 20,
+    "H_K_trainer_heal": 30,
+    "C_K_command": 30,
+    "S_K_tyrant_recoil": 20,
+    "D_A_atk": 200,
+    "D_A_def": 20,
+    "H_A_atk": 90,
+    "H_A_def": 90,
+    "C_A_atk": 80,
+    "C_A_def": 120,
+    "S_A_atk": 100,
+    "S_A_def": 100
+  },
+
+  "item_values": {
+    "heal_per_rank": 10,
+    "weapon_per_rank": 5,
+    "armor_per_rank": 5,
+    "burn_per_rank": 10,
+    "burn_recoil_per_rank": 5,
+
+    "H_J_heal": 50,
+    "H_Q_trainer_heal": 40,
+    "D_J_weapon": 30,
+    "D_Q_weapon": 50,
+    "D_Q_curse": 10,
+    "D_K_weapon": 70,
+    "D_A_burn": 100,
+    "C_A_draw": 3,
+    "S_J_poison": 20,
+    "S_K_sacrifice": 50,
+    "S_A_self_damage": 50
+  },
+
+  "ai": {
+    "swap_hp_threshold": 0.35,
+    "heal_hp_threshold": 0.6
+  }
+}

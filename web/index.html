@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>おぐそーのカードゲーム PoC</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="title">🎴 おぐそーのカードゲーム <span class="tag">PoC</span></div>
+  <div class="turninfo">
+    <span id="turnLabel">ターン -</span>
+    <span id="whoseTurn" class="badge">-</span>
+  </div>
+  <button id="newGameBtn" class="btn btn-ghost">🔄 新しいゲーム</button>
+</header>
+
+<main class="layout">
+
+  <section class="board">
+
+    <!-- ================= 相手 ================= -->
+    <div class="side side-opponent">
+      <div class="trainer">
+        <div class="trainer-head">
+          <span class="tname" id="opName">CPU</span>
+          <span class="thp" id="opHpText">200 / 200</span>
+        </div>
+        <div class="hpbar big"><div class="hpfill enemy" id="opHpFill"></div></div>
+        <div class="counts" id="opCounts"></div>
+      </div>
+
+      <div class="zone">
+        <div class="zone-label">🛡️ ベンチ</div>
+        <div class="slots" id="opBench"></div>
+      </div>
+      <div class="zone">
+        <div class="zone-label">🏟️ バトル場</div>
+        <div class="slots" id="opBattle"></div>
+      </div>
+    </div>
+
+    <div class="divider"><span>VS</span></div>
+
+    <!-- ================= 自分 ================= -->
+    <div class="side side-me">
+      <div class="zone">
+        <div class="zone-label">🏟️ バトル場</div>
+        <div class="slots" id="myBattle"></div>
+      </div>
+      <div class="zone">
+        <div class="zone-label">🛡️ ベンチ <span class="hint">（クリックで交代）</span></div>
+        <div class="slots" id="myBench"></div>
+      </div>
+
+      <div class="trainer">
+        <div class="trainer-head">
+          <span class="tname" id="myName">あなた</span>
+          <span class="thp" id="myHpText">200 / 200</span>
+        </div>
+        <div class="hpbar big"><div class="hpfill mine" id="myHpFill"></div></div>
+        <div class="counts" id="myCounts"></div>
+      </div>
+    </div>
+
+    <!-- ================= 手札 ================= -->
+    <div class="hand-zone">
+      <div class="zone-label">🎒 アイテム手札 <span class="hint">（クリックで使用・1ターン1枚）</span></div>
+      <div class="hand" id="myHand"></div>
+    </div>
+
+    <div class="actionbar">
+      <button id="attackBtn" class="btn btn-attack" disabled>⚔️ 攻撃</button>
+      <button id="endTurnBtn" class="btn btn-end" disabled>⏭️ ターン終了</button>
+      <span class="acthint" id="actHint"></span>
+    </div>
+
+  </section>
+
+  <!-- ================= ログ ================= -->
+  <aside class="logpane">
+    <div class="zone-label">📜 バトルログ</div>
+    <div class="loglist" id="logList"></div>
+  </aside>
+
+</main>
+
+<div id="overlay" class="overlay hidden">
+  <div class="overlay-box">
+    <div class="overlay-title" id="ovTitle">🏆</div>
+    <div class="overlay-text" id="ovText"></div>
+    <button id="ovBtn" class="btn btn-attack">🔄 もう一度あそぶ</button>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

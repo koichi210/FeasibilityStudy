@@ -54,7 +54,9 @@ body {
   padding: 16px;
   align-items: start;
 }
-@media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+/* 1100px を境に、右パネルを横に置くか下に流すかを切り替える。
+   横長レイアウト（min-width: 1100px）と条件が重ならないよう 1099px までにしている。 */
+@media (max-width: 1099px) { .layout { grid-template-columns: 1fr; } }
 
 .board { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 
@@ -466,6 +468,68 @@ body.in-lobby { overflow: hidden; }
   display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px;
 }
 .cardspage .refbody { font-size: 13px; }
+
+/* ==========================================================================
+   🖥️ 横長の画面（PC）向けレイアウト
+   PCは横に余白があるのに縦に伸びていて、スクロールしないと全体が見えなかった。
+   広い画面のときだけ、各プレイヤーの情報を横一列に並べて1画面に収める。
+   （狭い画面・スマホは従来どおり縦に積む）
+   ========================================================================== */
+@media (min-width: 1100px) {
+  /* 手札と操作ボタンを横に並べる */
+  .board {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "opp  opp"
+      "divi divi"
+      "me   me"
+      "hand act";
+    align-content: start;
+  }
+  .side-opponent { grid-area: opp; }
+  .divider       { grid-area: divi; }
+  .side-me       { grid-area: me; }
+  .hand-zone     { grid-area: hand; min-width: 0; }
+  .actionbar     { grid-area: act; flex-direction: column; align-items: stretch; }
+  .actionbar .btn { width: 100%; }
+  .acthint { text-align: center; max-width: 210px; }
+
+  /* 各プレイヤーの「トレーナー / バトル場 / ベンチ」を横一列に */
+  .side { flex-direction: row; align-items: flex-start; gap: 18px; }
+  .side .trainer { flex: 0 0 210px; align-self: center; }
+  .zone-battle { order: 2; }
+  .zone-bench  { order: 3; flex: 1; }
+  .side .zone { min-width: 0; }
+
+  /* バトル場とベンチの境目に区切り線を入れて、役割の違いを分かりやすく */
+  .side .zone-battle {
+    padding-right: 18px;
+    border-right: 1px solid var(--line);
+  }
+
+  /* 縦の余白を詰める */
+  .layout { padding: 12px; gap: 12px; }
+  .board { gap: 10px; }
+  .side { padding: 10px 14px; }
+  .divider { font-size: 11px; letter-spacing: 4px; }
+  .hand-zone, .actionbar { padding: 10px 14px; }
+  .zone-label { margin-bottom: 4px; }
+  .trainer { padding: 0; }
+}
+
+/* さらに広い画面では、カードを少し大きくして見やすく */
+@media (min-width: 1600px) {
+  :root { --card-w: 146px; }
+  .item-card { width: 164px; }
+}
+
+/* 画面の高さが足りないときは、カードの情報を削って縦を稼ぐ */
+@media (min-width: 1100px) and (max-height: 780px) {
+  .card .ability { display: none; }
+  .card .hptext { display: none; }
+  .side .trainer { flex-basis: 180px; }
+}
 
 /* ==========================================================================
    📱 スマホ・タブレット対応

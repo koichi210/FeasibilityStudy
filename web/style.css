@@ -377,21 +377,20 @@ body.in-lobby { overflow: hidden; }
 .optbtns { display: flex; gap: 10px; justify-content: center; }
 
 /* ------------------------------------------------------ ホバー拡大表示 */
-.zoom-pop {
-  position: absolute; left: 50%; transform: translateX(-50%) scale(.96);
-  width: 250px; z-index: 40;
+/* 吹き出しはカードの中ではなく画面直下に1つだけ置く。
+   カードの中に入れると、となりのカードに隠れたり画面の端で見切れたりするため。
+   位置は app.js が画面内に収まるように計算する。 */
+.hoverpop {
+  position: fixed; z-index: 100; width: 262px;
   background: #12332a; color: var(--text);
   border: 1px solid var(--gold); border-radius: 10px;
-  padding: 10px 12px; box-shadow: 0 12px 30px rgba(0,0,0,.6);
-  opacity: 0; visibility: hidden; pointer-events: none;
-  transition: opacity .12s ease, transform .12s ease;
+  padding: 11px 13px; box-shadow: 0 14px 34px rgba(0,0,0,.65);
+  pointer-events: none;   /* 吹き出し自身がマウスを拾わないように */
 }
-.zoom-pop.zp-up   { bottom: calc(100% + 8px); }
-.zoom-pop.zp-down { top: calc(100% + 8px); }
-.card:hover > .zoom-pop,
-.item-card:hover > .zoom-pop {
-  opacity: 1; visibility: visible; transform: translateX(-50%) scale(1);
-}
+.hoverpop.hidden { display: none; }
+
+/* ホバー中のカードを手前に持ち上げる（となりのカードに潜り込ませない） */
+.card:hover, .item-card:hover { z-index: 20; }
 .zp-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
 .zp-mark { font-size: 19px; font-weight: 800; color: var(--gold); }
 .zp-name { font-size: 14px; font-weight: 800; }
@@ -565,7 +564,7 @@ body.in-lobby { overflow: hidden; }
 
 /* マウスが無い端末では、ホバー拡大は出さない（代わりにシートを使う） */
 @media (hover: none) {
-  .zoom-pop { display: none !important; }
+  .hoverpop { display: none !important; }
   .card, .item-card { cursor: pointer; }
 }
 

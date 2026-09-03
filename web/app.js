@@ -317,8 +317,8 @@ function monsterCard(m, opts) {
       '" style="width:' + hpRate * 100 + '%"></div></div>' +
     '<div class="hptext">' + m.hp + " / " + m.hp_max + "</div>" +
     '<div class="badges">' + badges.join("") + "</div>" +
-    '<div class="ability">' + (m.ability ? escapeHtml(m.ability.text) : "") + "</div>" +
-    zoomPop(monsterZoom(m), opts.mine);
+    '<div class="ability">' + (m.ability ? escapeHtml(m.ability.text) : "") + "</div>";
+  attachHover(el, monsterZoom(m));
   return el;
 }
 
@@ -359,8 +359,8 @@ function itemCard(c, usable, onClick) {
   el.innerHTML =
     '<div class="item-head"><span>' + c.mark + "</span><span>" + c.rank_label + "</span></div>" +
     '<div class="item-name">' + escapeHtml(c.name) + "</div>" +
-    '<div class="item-text">' + escapeHtml(text) + "</div>" +
-    zoomPop(itemZoom(c, usable), true);
+    '<div class="item-text">' + escapeHtml(text) + "</div>";
+  attachHover(el, itemZoom(c, usable));
   return el;
 }
 
@@ -374,8 +374,45 @@ function itemZoom(c, usable) {
   return h;
 }
 
-function zoomPop(inner, mine) {
-  return '<div class="zoom-pop ' + (mine ? "zp-up" : "zp-down") + '">' + inner + "</div>";
+/* ----------------------------------- マウスホバーの拡大表示（PC用）
+   吹き出しをカードの中に置くと、
+     ・となりのカードが上に重なって隠れる
+     ・画面の端で見切れる
+   という問題が起きる。
+   そこで画面直下に1つだけ置き、位置をJSで計算して画面内に収める。 */
+function attachHover(el, html) {
+  if (TOUCH) return;
+  el.addEventListener("mouseenter", () => showHoverPop(el, html));
+  el.addEventListener("mouseleave", hideHoverPop);
+}
+
+function showHoverPop(el, html) {
+  const pop = $("hoverPop");
+  pop.innerHTML = html;
+  pop.classList.remove("hidden");
+
+  const r = el.getBoundingClientRect();
+  const pw = pop.offsetWidth;
+  const ph = pop.offsetHeight;
+  const m = 10;   // 画面ふちからの余白
+
+  // 横：カードの中央に寄せつつ、画面からはみ出さないところまで戻す
+  let left = r.left + r.width / 2 - pw / 2;
+  left = Math.max(m, Math.min(left, window.innerWidth - pw - m));
+
+  // 縦：まず上に出す。入らなければ下に出す。それも無理なら画面内に収める
+  let top = r.top - ph - m;
+  if (top < m) top = r.bottom + m;
+  if (top + ph > window.innerHeight - m) {
+    top = Math.max(m, window.innerHeight - ph - m);
+  }
+
+  pop.style.left = left + "px";
+  pop.style.top = top + "px";
+}
+
+function hideHoverPop() {
+  $("hoverPop").classList.add("hidden");
 }
 
 /* ------------------------------------------ カード詳細シート（スマホ） */
@@ -438,6 +475,9 @@ function render() {
   }
 
   if (sameRev) return;   // 中身が変わっていないので以降は描き直さない
+
+  // カードを作り直すので、出しっぱなしの吹き出しは消しておく
+  hideHoverPop();
 
   // --- トレーナー ---
   $("opName").textContent = op.name;
@@ -687,6 +727,10 @@ $("lobby").addEventListener("click", (e) => {
   if (!$("lb-mode").classList.contains("active")) return;
   if (RESUMABLE) resumeGame();
 });
+
+// スクロールやウィンドウサイズ変更で位置がずれるので、いったん消す
+window.addEventListener("scroll", hideHoverPop, true);
+window.addEventListener("resize", hideHoverPop);
 
 initTabs();
 

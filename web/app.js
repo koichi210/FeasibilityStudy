@@ -552,6 +552,28 @@ async function loadReference() {
   }
 }
 
+/* ==================================================== 名前の変更 */
+function openNameDialog() {
+  if (!SESSION || !STATE || !STATE.me) return;
+  $("newName").value = STATE.me.name || "";
+  $("nameOverlay").classList.remove("hidden");
+  $("newName").focus();
+  $("newName").select();
+}
+
+async function applyName() {
+  const name = ($("newName").value || "").trim();
+  if (!name) { showToast("名前を入れてね。"); return; }
+  try {
+    STATE = await api("/api/room/rename",
+      { code: SESSION.code, token: SESSION.token, name: name });
+    localStorage.setItem("cardgame.name", name);
+    $("nameOverlay").classList.add("hidden");
+    lastRev = -1;
+    render();
+  } catch (e) { showToast(e.message); }
+}
+
 /* ======================================================= オプション */
 function openOptions() {
   const o = (STATE && STATE.options) || {};
@@ -626,6 +648,13 @@ document.querySelectorAll("[data-back]").forEach((b) => {
 });
 
 $("btnResume").addEventListener("click", resumeGame);
+$("myName").addEventListener("click", openNameDialog);
+$("nameApply").addEventListener("click", applyName);
+$("nameCancel").addEventListener("click", () => $("nameOverlay").classList.add("hidden"));
+$("newName").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") applyName();
+  if (e.key === "Escape") $("nameOverlay").classList.add("hidden");
+});
 
 /* モード選択の外側をタップしたら、中断した対戦にもどる。
    「間違えてモード選択を開いてしまった」を1タップで取り消せるように。 */

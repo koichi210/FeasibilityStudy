@@ -109,6 +109,17 @@ class Room:
     def touch(self, seat: int):
         self.last_seen[seat] = time.time()
 
+    def rename(self, seat: int, name: str) -> str:
+        """対戦中でも名前を変えられるようにする。ゲームの進行には影響しない。"""
+        name = (name or "").strip()[:12]
+        if not name:
+            raise RoomError("名前を入れてね。")
+        self.names[seat] = name
+        if self.game:
+            self.game.players[seat].name = name
+        self.rev += 1
+        return name
+
     def opponent_online(self, seat: int) -> bool:
         other = 1 - seat
         if self.mode == "cpu":

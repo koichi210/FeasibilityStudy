@@ -60,7 +60,7 @@
 
       <div class="trainer">
         <div class="trainer-head">
-          <span class="tname" id="myName">あなた</span>
+          <button class="tname editable" id="myName" title="クリックで名前を変えられます">あなた</button>
           <span class="thp" id="myHpText">200 / 200</span>
         </div>
         <div class="hpbar big"><div class="hpfill mine" id="myHpFill"></div></div>
@@ -193,6 +193,20 @@
     </div>
 
     <div class="lobbyerr hidden" id="lobbyErr"></div>
+  </div>
+</div>
+
+<!-- ================= 名前の変更 ================= -->
+<div id="nameOverlay" class="overlay hidden">
+  <div class="overlay-box namebox">
+    <div class="overlay-title">📝</div>
+    <div class="overlay-text">名前を変える</div>
+    <input type="text" id="newName" maxlength="12" placeholder="なまえ">
+    <div class="optnote">対戦中でも変えられます。相手の画面にもすぐ反映されます。</div>
+    <div class="optbtns">
+      <button id="nameApply" class="btn btn-attack">変更する</button>
+      <button id="nameCancel" class="btn btn-end">キャンセル</button>
+    </div>
   </div>
 </div>
 

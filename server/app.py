@@ -175,6 +175,22 @@ def api_room_action():
     return jsonify(view)
 
 
+@app.route("/api/room/rename", methods=["POST"])
+def api_room_rename():
+    """対戦中でも名前を変えられる。相手の画面にもすぐ反映される。"""
+    b = _body()
+    # 参加者かどうかの確認は 404、入力の不備は 400。他のAPIと同じ扱いに揃える
+    try:
+        room, seat = REGISTRY.authed(b.get("code"), b.get("token"))
+    except RoomError as e:
+        return _fail(e, 404)
+    try:
+        room.rename(seat, b.get("name") or "")
+    except RoomError as e:
+        return _fail(e)
+    return jsonify(room.view(seat))
+
+
 @app.route("/api/room/rematch", methods=["POST"])
 def api_room_rematch():
     """決着後にもう1試合。相手の画面にも自動で反映される。"""
@@ -244,7 +260,7 @@ def print_banner(host: str, port: int):
         print("  ⚠️ 初回は Windows の確認が出たら「アクセスを許可する」を選んでね")
     else:
         print("  ブラウザで開いてね →  {}".format(_url("localhost", port)))
-        print("  （ほかの機器からも繋ぐときは LAN対戦用に起動.bat を使ってね）")
+        print("  （スマホやほかのPCからも繋ぐときは「みんなで遊ぶ」のほうを使ってね）")
     print("")
     print("  止めるときは Ctrl+C")
     print(line)

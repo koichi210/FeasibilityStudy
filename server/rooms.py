@@ -28,10 +28,24 @@ from engine.game import DEFAULT_OPTIONS, Game
 CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 CODE_LEN = 4
 
-ROOM_TTL = 3 * 60 * 60        # 3時間で部屋を掃除する
+# 部屋を掃除する条件。「席を外している人の部屋を消さない」ことを最優先にしている。
+#   ⚠️ 経過時間ではなく「最後に誰かが見に来てからの時間」で判定すること。
+#      作成からの経過時間で消すと、長時間の対戦の途中で部屋が消えてしまう。
+ROOM_TTL = 3 * 60 * 60        # 誰も見に来なくなって3時間で掃除する
 FINISHED_TTL = 30 * 60        # 決着後30分で掃除する
 OFFLINE_AFTER = 15            # 何秒アクセスが無ければ「切断中」とみなすか
 MAX_ROOMS = 50
+
+# 相手待ちのまま放置された部屋を消すまでの時間。
+# 待機画面にいる間はブラウザが1.2秒ごとに見に来るので、
+# これを過ぎている＝画面を閉じた／別のことをしている、と判断できる。
+# （放っておくと「入る部屋の一覧」がゴミだらけになる）
+#
+# ⚠️ 短くしすぎないこと。
+#    「部屋を作ったけど、相手が繋ぎ方に手間取っている」という場面は普通にある。
+#    慣れていない人が家族に聞きながら設定していると数分かかる。
+#    ゴミが少し残るほうが、待っている人の部屋が消えるより百倍マシ。
+WAITING_TTL = 5 * 60
 
 
 class RoomError(Exception):
@@ -193,11 +207,29 @@ class RoomRegistry:
     def _cleanup(self):
         now = time.time()
         for code, r in list(self._rooms.items()):
-            too_old = (now - r.created) > ROOM_TTL
+            # 「最後に誰かが見に来てから」で測る。
+            # トイレや食事で1時間離れても、対戦中の部屋は消えない。
+            idle = now - max(r.last_seen)
+            too_old = idle > ROOM_TTL
             done = (r.finished_at is not None
                     and (now - r.finished_at) > FINISHED_TTL)
-            if too_old or done:
+            # 相手待ちのまま、作った人も見に来なくなった部屋（＝一覧のゴミ）
+            abandoned = (r.mode == "lan" and not r.is_full
+                         and (now - r.last_seen[0]) > WAITING_TTL)
+            if too_old or done or abandoned:
                 del self._rooms[code]
+
+    def close(self, code: str, token: str):
+        """作った人が「やめる」を押したときに、その場で部屋を閉じる。"""
+        room = self.get(code)
+        seat = room.seat_of(token or "")
+        if seat is None:
+            raise RoomError("この部屋の参加者として確認できませんでした。")
+        # 対戦がもう始まっている部屋は消さない（相手が困るため）
+        if room.is_full and room.started:
+            raise RoomError("対戦中の部屋は閉じられません。")
+        with self._lock:
+            self._rooms.pop(room.code, None)
 
     def create(self, mode: str, options: Optional[dict], host_name: str) -> Room:
         with self._lock:

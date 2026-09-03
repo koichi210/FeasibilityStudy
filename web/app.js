@@ -16,6 +16,7 @@ let RESUMABLE = null; // 「モード選択へ」で中断した対戦。あと�
 let STATE = null;     // サーバーから来た盤面
 let REF = null;       // カード図鑑（一度取ったら使い回す）
 let lastRev = -1;
+let lostCount = 0;    // 「部屋が見つからない」が何回続いたか
 let pollTimer = null;
 let roomListTimer = null;
 let busy = false;
@@ -35,7 +36,9 @@ async function api(path, body) {
   let data = null;
   try { data = await res.json(); } catch (e) { data = null; }
   if (!res.ok) {
-    throw new Error((data && data.error) || ("通信に失敗しました (" + res.status + ")"));
+    const err = new Error((data && data.error) || ("通信に失敗しました (" + res.status + ")"));
+    err.status = res.status;
+    throw err;
   }
   return data;
 }
@@ -171,8 +174,22 @@ async function poll() {
   try {
     v = await api("/api/room/state?code=" + encodeURIComponent(SESSION.code) +
                   "&token=" + encodeURIComponent(SESSION.token));
+    lostCount = 0;
   } catch (e) {
-    return;   // 一時的な失敗は無視。次のポーリングで拾う
+    // 一時的な通信エラーは無視して次のポーリングで拾う。
+    // ただし「部屋が無い」(404)が続く場合は本当に消えているので、
+    // 黙って固まらずに知らせる（席を外している間にサーバーが再起動した等）
+    if (e.status === 404) {
+      lostCount += 1;
+      if (lostCount >= 4) {
+        stopPolling();
+        SESSION = null;
+        saveSession();
+        showToast("部屋が見つかりませんでした。サーバーが再起動したかもしれません。");
+        showLobby("lb-mode");
+      }
+    }
+    return;
   }
   const wasWaiting = STATE && STATE.room && STATE.room.waiting;
   STATE = v;
@@ -641,8 +658,15 @@ $("joinCode").addEventListener("keydown", (e) => {
 });
 document.querySelectorAll("[data-back]").forEach((b) => {
   b.addEventListener("click", () => {
-    // 作りかけのLAN部屋から抜けるだけ。中断した対戦（RESUMABLE）はそのまま残す
-    if (SESSION && SESSION.mode === "lan") { SESSION = null; saveSession(); stopPolling(); }
+    // 作りかけのLAN部屋から抜けるだけ。中断した対戦（RESUMABLE）はそのまま残す。
+    // サーバー側の部屋も閉じておかないと、一覧にゴミが残り続ける。
+    if (SESSION && SESSION.mode === "lan") {
+      const s = SESSION;
+      api("/api/room/leave", { code: s.code, token: s.token }).catch(() => {});
+      SESSION = null;
+      saveSession();
+      stopPolling();
+    }
     showLobby(b.dataset.back);
   });
 });

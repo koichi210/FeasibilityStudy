@@ -175,6 +175,17 @@ def api_room_action():
     return jsonify(view)
 
 
+@app.route("/api/room/leave", methods=["POST"])
+def api_room_leave():
+    """相手待ちの部屋をやめる。放置された部屋が一覧に残らないようにするため。"""
+    b = _body()
+    try:
+        REGISTRY.close(b.get("code") or "", b.get("token") or "")
+    except RoomError as e:
+        return _fail(e)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/room/rename", methods=["POST"])
 def api_room_rename():
     """対戦中でも名前を変えられる。相手の画面にもすぐ反映される。"""

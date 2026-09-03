@@ -242,6 +242,93 @@ body {
 .overlay-title { font-size: 46px; }
 .overlay-text  { font-size: 17px; font-weight: 700; }
 
+/* ---------------------------------------------------------------- ロビー */
+.hidden { display: none !important; }
+
+/* ロビー表示中は、ゲーム用のボタンを隠す */
+body.in-lobby .turninfo,
+body.in-lobby #optionBtn,
+body.in-lobby #newGameBtn,
+body.in-lobby #leaveBtn,
+body.in-lobby #roomTag { display: none; }
+
+.lobby { background: rgba(6,26,20,.94); }
+.lobbybox {
+  background: #12332a; border: 1px solid var(--line); border-radius: 20px;
+  padding: 34px 40px; width: min(680px, 92vw);
+  box-shadow: 0 24px 60px rgba(0,0,0,.5);
+}
+.lobbyscreen { display: none; flex-direction: column; gap: 16px; }
+.lobbyscreen.active { display: flex; }
+.lobbytitle { font-size: 24px; font-weight: 800; text-align: center; }
+.lobbysub { font-size: 13px; color: var(--muted); text-align: center; margin-top: -8px; }
+
+.modes { display: flex; gap: 14px; flex-wrap: wrap; }
+.modecard {
+  flex: 1 1 220px; background: rgba(255,255,255,.07);
+  border: 2px solid var(--line); border-radius: 14px;
+  padding: 22px 16px; cursor: pointer; color: var(--text);
+  font-family: inherit; text-align: center;
+  transition: transform .12s ease, border-color .12s ease, background .12s ease;
+}
+.modecard:hover {
+  transform: translateY(-4px); border-color: var(--gold);
+  background: rgba(242,193,78,.14);
+}
+.modeicon { font-size: 40px; line-height: 1.1; }
+.modename { font-size: 17px; font-weight: 800; margin: 6px 0 5px; }
+.modedesc { font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+
+.namerow { display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 700; }
+.namerow input, .joinmanual input {
+  flex: 1; padding: 9px 12px; border-radius: 9px;
+  border: 1px solid var(--line); background: rgba(0,0,0,.3);
+  color: var(--text); font-family: inherit; font-size: 14px;
+}
+.namerow input:focus, .joinmanual input:focus { outline: 2px solid var(--gold); }
+
+.roomcode {
+  font-size: 52px; font-weight: 900; letter-spacing: 12px; text-align: center;
+  color: var(--gold); background: rgba(0,0,0,.3); border-radius: 14px;
+  padding: 16px 10px 16px 22px; font-variant-numeric: tabular-nums;
+}
+.waitnote { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.7; }
+.spinner { text-align: center; font-size: 14px; color: var(--gold); animation: pulse 1.4s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+
+.roomlist { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; }
+.roomitem {
+  display: flex; align-items: center; gap: 14px;
+  background: rgba(255,255,255,.07); border: 1px solid var(--line);
+  border-radius: 10px; padding: 12px 16px; cursor: pointer;
+  color: var(--text); font-family: inherit; text-align: left;
+  transition: border-color .12s ease, background .12s ease;
+}
+.roomitem:hover { border-color: var(--gold); background: rgba(242,193,78,.14); }
+.ri-code { font-size: 20px; font-weight: 900; letter-spacing: 3px; color: var(--gold); }
+.ri-host { flex: 1; font-size: 13px; font-weight: 700; }
+.ri-wait { font-size: 11px; color: var(--muted); }
+.emptyroom { font-size: 12.5px; color: var(--muted); text-align: center; padding: 22px 0; line-height: 1.8; }
+
+.joinmanual { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
+.joinmanual input {
+  flex: 0 0 110px; text-align: center; letter-spacing: 6px;
+  font-size: 18px; font-weight: 800; text-transform: uppercase;
+}
+.lobbyfoot { display: flex; justify-content: center; gap: 12px; }
+.lobbyerr {
+  margin-top: 14px; background: rgba(224,90,85,.2); border: 1px solid var(--red);
+  border-radius: 9px; padding: 9px 12px; font-size: 12.5px; text-align: center;
+}
+
+/* -------------------------------------------------------- 通知バナー */
+.pausebanner {
+  position: fixed; left: 50%; transform: translateX(-50%); top: 60px; z-index: 45;
+  background: #4a2b12; border: 1px solid var(--gold); border-radius: 10px;
+  padding: 10px 20px; font-size: 13px; font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+}
+
 /* ---------------------------------------------------------- オプション */
 .optbox { max-width: 460px; text-align: left; }
 .optbox .overlay-title, .optbox .overlay-text { text-align: center; }

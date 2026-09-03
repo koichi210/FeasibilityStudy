@@ -1,43 +1,36 @@
-/* おぐそーのカードゲーム PoC — 画面ロジック
+/* おぐそーのカードゲーム — 画面ロジック
+
    サーバーから盤面(view)を受け取って描画するだけ。ルール判定は一切しない。
-   「今できること」は view.actions に入って降ってくるので、それをUIに紐づける。 */
+   「今できること」は view.actions に入って降ってくるので、それをUIに紐づける。
+
+   CPU対戦もLAN対戦も「部屋(room)」として同じAPIで動く。
+   違いは、LANのときだけ相手の操作を拾うためにポーリングすること。 */
 
 const $ = (id) => document.getElementById(id);
 const RED_SUITS = new Set(["H", "D"]);
+const STORE_KEY = "cardgame.session";
+const POLL_MS = 1200;
 
-let STATE = null;
-let REF = null;      // カード図鑑データ（一度取ったら使い回す）
+let SESSION = null;   // {code, token, seat, mode}
+let STATE = null;     // サーバーから来た盤面
+let REF = null;       // カード図鑑（一度取ったら使い回す）
+let lastRev = -1;
+let pollTimer = null;
+let roomListTimer = null;
 let busy = false;
 
-/* ------------------------------------------------------------ 通信 */
+/* ============================================================== 通信 */
 async function api(path, body) {
   const opt = body
     ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     : {};
   const res = await fetch(path, opt);
-  return res.json();
-}
-
-async function refresh() {
-  STATE = await api("/api/state");
-  render();
-}
-
-async function send(action) {
-  if (busy) return;
-  busy = true;
-  setBusy(true);
-  try {
-    STATE = await api("/api/action", { action });
-    render();
-  } finally {
-    busy = false;
-    setBusy(false);
+  let data = null;
+  try { data = await res.json(); } catch (e) { data = null; }
+  if (!res.ok) {
+    throw new Error((data && data.error) || ("通信に失敗しました (" + res.status + ")"));
   }
-}
-
-function setBusy(on) {
-  document.body.style.cursor = on ? "progress" : "";
+  return data;
 }
 
 function escapeHtml(s) {
@@ -46,7 +39,185 @@ function escapeHtml(s) {
   ));
 }
 
-/* ------------------------------------------------------- カード描画 */
+function saveSession() {
+  try {
+    if (SESSION) localStorage.setItem(STORE_KEY, JSON.stringify(SESSION));
+    else localStorage.removeItem(STORE_KEY);
+  } catch (e) { /* プライベートウィンドウ等。使えなくても動く */ }
+}
+
+function loadSession() {
+  try {
+    const s = localStorage.getItem(STORE_KEY);
+    return s ? JSON.parse(s) : null;
+  } catch (e) { return null; }
+}
+
+/* ============================================================ ロビー */
+function showLobby(screen) {
+  stopPolling();
+  document.body.classList.add("in-lobby");
+  $("lobby").classList.remove("hidden");
+  document.querySelectorAll(".lobbyscreen").forEach((s) => s.classList.remove("active"));
+  $(screen).classList.add("active");
+  hideErr();
+  if (screen === "lb-join") startRoomList(); else stopRoomList();
+  if (screen !== "lb-wait" && screen !== "lb-join") stopPolling();
+}
+
+function hideLobby() {
+  document.body.classList.remove("in-lobby");
+  $("lobby").classList.add("hidden");
+  stopRoomList();
+}
+
+function showErr(msg) {
+  const e = $("lobbyErr");
+  e.textContent = "⚠️ " + msg;
+  e.classList.remove("hidden");
+}
+function hideErr() { $("lobbyErr").classList.add("hidden"); }
+
+function playerName() {
+  const v = ($("playerName").value || "").trim();
+  return v || "なまえなし";
+}
+
+async function createRoom(mode) {
+  try {
+    const r = await api("/api/room/create", { mode: mode, name: mode === "lan" ? playerName() : "あなた" });
+    SESSION = { code: r.code, token: r.token, seat: r.seat, mode: mode };
+    saveSession();
+    if (mode === "cpu") {
+      enterGame(r.state);
+    } else {
+      $("roomCode").textContent = r.code;
+      showLobby("lb-wait");
+      startPolling();     // 相手が来たら自動で始まる
+    }
+  } catch (e) { showErr(e.message); }
+}
+
+async function joinRoom(code) {
+  try {
+    const r = await api("/api/room/join", { code: code, name: playerName() });
+    SESSION = { code: r.code, token: r.token, seat: r.seat, mode: "lan" };
+    saveSession();
+    enterGame(r.state);
+  } catch (e) { showErr(e.message); }
+}
+
+function startRoomList() {
+  stopRoomList();
+  refreshRoomList();
+  roomListTimer = setInterval(refreshRoomList, 2000);
+}
+function stopRoomList() {
+  if (roomListTimer) { clearInterval(roomListTimer); roomListTimer = null; }
+}
+
+async function refreshRoomList() {
+  let rooms = [];
+  try {
+    rooms = (await api("/api/room/list")).rooms || [];
+  } catch (e) { return; }
+  const box = $("roomList");
+  if (!rooms.length) {
+    box.innerHTML = '<div class="emptyroom">開いている部屋はありません。<br>' +
+      "相手に「部屋を作る」をやってもらってね。</div>";
+    return;
+  }
+  box.innerHTML = "";
+  rooms.forEach((r) => {
+    const b = document.createElement("button");
+    b.className = "roomitem";
+    b.innerHTML = '<span class="ri-code">' + escapeHtml(r.code) + "</span>" +
+      '<span class="ri-host">' + escapeHtml(r.host) + " さんの部屋</span>" +
+      '<span class="ri-wait">' + Math.floor(r.waiting_seconds / 60) + "分待機中</span>";
+    b.addEventListener("click", () => joinRoom(r.code));
+    box.appendChild(b);
+  });
+}
+
+/* ============================================================ ゲーム */
+function enterGame(view) {
+  hideLobby();
+  STATE = view;
+  lastRev = -1;
+  render();
+  if (SESSION && SESSION.mode === "lan") startPolling();
+}
+
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(poll, POLL_MS);
+}
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+async function poll() {
+  if (!SESSION || busy) return;
+  let v;
+  try {
+    v = await api("/api/room/state?code=" + encodeURIComponent(SESSION.code) +
+                  "&token=" + encodeURIComponent(SESSION.token));
+  } catch (e) {
+    return;   // 一時的な失敗は無視。次のポーリングで拾う
+  }
+  const wasWaiting = STATE && STATE.room && STATE.room.waiting;
+  STATE = v;
+  if (wasWaiting && !v.room.waiting) {
+    enterGame(v);      // 相手が来た！
+    return;
+  }
+  if (v.room.waiting) return;   // まだ待機中
+  render();
+}
+
+async function send(action) {
+  if (busy || !SESSION) return;
+  busy = true;
+  document.body.style.cursor = "progress";
+  try {
+    STATE = await api("/api/room/action",
+      { code: SESSION.code, token: SESSION.token, action: action });
+    render();
+  } catch (e) {
+    showToast(e.message);
+  } finally {
+    busy = false;
+    document.body.style.cursor = "";
+  }
+}
+
+async function rematch(options) {
+  if (!SESSION) return;
+  try {
+    const body = { code: SESSION.code, token: SESSION.token };
+    if (options) body.options = options;
+    STATE = await api("/api/room/rematch", body);
+    lastRev = -1;
+    render();
+  } catch (e) { showToast(e.message); }
+}
+
+function leaveRoom() {
+  stopPolling();
+  SESSION = null;
+  STATE = null;
+  saveSession();
+  showLobby("lb-mode");
+}
+
+function showToast(msg) {
+  const b = $("pauseBanner");
+  b.textContent = "⚠️ " + msg;
+  b.classList.remove("hidden");
+  setTimeout(() => b.classList.add("hidden"), 3000);
+}
+
+/* ======================================================= カード描画 */
 function monsterCard(m, opts) {
   opts = opts || {};
   if (!m) {
@@ -144,18 +315,45 @@ function zoomPop(inner, mine) {
   return '<div class="zoom-pop ' + (mine ? "zp-up" : "zp-down") + '">' + inner + "</div>";
 }
 
-/* ------------------------------------------------------------ 描画 */
+/* ============================================================== 描画 */
 function render() {
-  if (!STATE) return;
+  if (!STATE || !STATE.me) return;
   const me = STATE.me, op = STATE.opponent;
   const acts = STATE.actions || [];
   const byType = {};
   acts.forEach((a) => { (byType[a.type] = byType[a.type] || []).push(a); });
 
+  // 相手の操作でしか変わらない場面では、無駄な再描画をしない
+  const rev = STATE.rev;
+  const sameRev = (rev !== undefined && rev === lastRev);
+  lastRev = rev;
+
   $("turnLabel").textContent = "ターン " + STATE.turn;
   const who = $("whoseTurn");
-  who.textContent = STATE.is_my_turn ? "あなたの番" : "CPUの番";
+  who.textContent = STATE.is_my_turn ? "あなたの番" : (op.name + " の番");
   who.className = "badge " + (STATE.is_my_turn ? "mine" : "enemy");
+
+  // 部屋の表示
+  const room = STATE.room || {};
+  const tag = $("roomTag");
+  if (room.mode === "lan") {
+    tag.textContent = "🌐 LAN " + room.code;
+    tag.classList.remove("hidden");
+  } else {
+    tag.textContent = "🤖 CPU対戦";
+    tag.classList.remove("hidden");
+  }
+
+  // 相手の接続状態
+  const banner = $("pauseBanner");
+  if (room.mode === "lan" && !room.opponent_online) {
+    banner.textContent = "📡 " + (op.name || "相手") + " の接続が切れているみたい…（画面を開き直すと戻ります）";
+    banner.classList.remove("hidden");
+  } else if (banner.textContent.indexOf("📡") === 0) {
+    banner.classList.add("hidden");
+  }
+
+  if (sameRev) return;   // 中身が変わっていないので以降は描き直さない
 
   // --- トレーナー ---
   $("opName").textContent = op.name;
@@ -190,9 +388,7 @@ function render() {
   // --- 手札 ---
   const handBox = $("myHand");
   handBox.innerHTML = "";
-  if (!me.hand.length) {
-    handBox.innerHTML = '<div class="acthint">手札なし</div>';
-  }
+  if (!me.hand.length) handBox.innerHTML = '<div class="acthint">手札なし</div>';
   me.hand.forEach((c, i) => {
     const use = (byType.item || []).find((a) => a.hand === i);
     handBox.appendChild(itemCard(c, !!use, () => send({ type: "item", hand: i })));
@@ -203,7 +399,6 @@ function render() {
   $("attackBtn").disabled = !atk;
   $("attackBtn").textContent = atk ? atk.label : "⚔️ 攻撃";
   $("endTurnBtn").disabled = !(byType.end_turn || []).length;
-
   $("actHint").textContent = hintText(STATE, me, byType);
 
   // --- ログ ---
@@ -242,7 +437,10 @@ function optionSummary() {
 
 function hintText(st, me, byType) {
   if (st.winner !== null && st.winner !== undefined) return "ゲーム終了";
-  if (!st.is_my_turn) return "CPUが考え中…";
+  if (!st.is_my_turn) {
+    return st.room && st.room.mode === "lan"
+      ? "相手の番です。待ってね…" : "CPUが考え中…";
+  }
   const bits = [];
   if (me.battle && me.battle.fatigue > 0) bits.push("バトル場は疲労中（攻撃できない）");
   if (me.item_used) bits.push("アイテムは使用済み");
@@ -262,7 +460,7 @@ function pct(v, max) {
   return Math.max(0, Math.min(100, (v / max) * 100)) + "%";
 }
 
-/* ------------------------------------------------------ タブと図鑑 */
+/* ======================================================= タブと図鑑 */
 function initTabs() {
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -282,11 +480,11 @@ async function loadReference() {
     $("refItem").innerHTML = CardRef.itemHtml(REF, false);
     $("refMonster").innerHTML = CardRef.monsterHtml(REF, false);
   } catch (e) {
-    $("refItem").innerHTML = '<div class="ref-note">読み込みに失敗しました: ' + e + "</div>";
+    $("refItem").innerHTML = '<div class="ref-note">読み込みに失敗しました: ' + e.message + "</div>";
   }
 }
 
-/* ------------------------------------------------------ オプション */
+/* ======================================================= オプション */
 function openOptions() {
   const o = (STATE && STATE.options) || {};
   $("optAbilities").checked = !!o.monster_abilities;
@@ -296,37 +494,79 @@ function openOptions() {
 }
 
 function syncOptionLock() {
-  // 技がオフなら、魔王（♠Aの技）も使えない
   const on = $("optAbilities").checked;
   $("optDemon").disabled = !on;
   if (!on) $("optDemon").checked = false;
 }
 
 async function applyOptions() {
-  const options = {
+  $("optionOverlay").classList.add("hidden");
+  await rematch({
     monster_abilities: $("optAbilities").checked,
     demon_lord: $("optAbilities").checked && $("optDemon").checked,
-  };
-  $("optionOverlay").classList.add("hidden");
-  STATE = await api("/api/new", { options: options });
-  render();
+  });
 }
 
-/* ------------------------------------------------------------ 起動 */
+/* ============================================================== 起動 */
 $("attackBtn").addEventListener("click", () => send({ type: "attack" }));
 $("endTurnBtn").addEventListener("click", () => send({ type: "end_turn" }));
-$("newGameBtn").addEventListener("click", async () => {
-  STATE = await api("/api/new", {});
-  render();
-});
-$("ovBtn").addEventListener("click", async () => {
-  STATE = await api("/api/new", {});
-  render();
-});
+$("newGameBtn").addEventListener("click", () => rematch(null));
+$("ovBtn").addEventListener("click", () => rematch(null));
+$("leaveBtn").addEventListener("click", leaveRoom);
 $("optionBtn").addEventListener("click", openOptions);
 $("optCancel").addEventListener("click", () => $("optionOverlay").classList.add("hidden"));
 $("optApply").addEventListener("click", applyOptions);
 $("optAbilities").addEventListener("change", syncOptionLock);
 
+$("btnCpu").addEventListener("click", () => createRoom("cpu"));
+$("btnLan").addEventListener("click", () => {
+  const saved = localStorage.getItem("cardgame.name");
+  if (saved) $("playerName").value = saved;
+  showLobby("lb-lan");
+});
+$("btnMakeRoom").addEventListener("click", () => {
+  localStorage.setItem("cardgame.name", playerName());
+  createRoom("lan");
+});
+$("btnFindRoom").addEventListener("click", () => {
+  localStorage.setItem("cardgame.name", playerName());
+  showLobby("lb-join");
+});
+$("btnJoinCode").addEventListener("click", () => {
+  const c = ($("joinCode").value || "").trim().toUpperCase();
+  if (c.length !== 4) { showErr("合言葉は4文字だよ。"); return; }
+  joinRoom(c);
+});
+$("joinCode").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("btnJoinCode").click();
+});
+document.querySelectorAll("[data-back]").forEach((b) => {
+  b.addEventListener("click", () => {
+    if (SESSION && SESSION.mode === "lan") { SESSION = null; saveSession(); stopPolling(); }
+    showLobby(b.dataset.back);
+  });
+});
+
 initTabs();
-refresh();
+
+/* 前回の続きがあれば復帰する（F5しても席を失わないように） */
+(async function boot() {
+  const s = loadSession();
+  if (!s) { showLobby("lb-mode"); return; }
+  SESSION = s;
+  try {
+    const v = await api("/api/room/state?code=" + encodeURIComponent(s.code) +
+                        "&token=" + encodeURIComponent(s.token));
+    if (v.room && v.room.waiting) {
+      $("roomCode").textContent = s.code;
+      showLobby("lb-wait");
+      startPolling();
+    } else {
+      enterGame(v);
+    }
+  } catch (e) {
+    SESSION = null;
+    saveSession();
+    showLobby("lb-mode");
+  }
+})();

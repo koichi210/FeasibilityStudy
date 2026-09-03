@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-ローカル Web サーバー（PoC 版）。
+Web サーバー。
 
-いまは「1つのゲームを、ブラウザ1人 vs CPU で遊ぶ」だけ。
-将来 LAN 対戦にするときは
-  * ゲームを部屋(room)単位で複数持つ
-  * viewer をプレイヤーごとに切り替える（view() が既に対応済み）
-だけで拡張できるようにしてある。
+CPU対戦もLAN対戦も「部屋（room）」として同じ仕組みで扱う。
+部屋の中身は server/rooms.py、ゲームのルールは engine/ にある。
+ここは HTTP の入り口だけを担当する。
+
+  席0 … 部屋を作った人
+  席1 … CPU（CPU対戦） or あとから入ってきた人（LAN対戦）
+
+盤面は必ず `room.view(seat)` を通して返すので、
+相手の手札はサーバー側で落とされる。通信を覗いてもカンニングできない。
 """
 from __future__ import annotations
 
@@ -15,16 +19,31 @@ import os
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from engine.ai import run_cpu_turn
-from engine.game import DEFAULT_OPTIONS, Game
+from engine.game import DEFAULT_OPTIONS
 from engine.reference import build_reference
+from server.rooms import REGISTRY, RoomError
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB_DIR = os.path.join(ROOT, "web")
 
 app = Flask(__name__, static_folder=WEB_DIR, static_url_path="/static")
 
-# オプションは次に起動したときも覚えていてほしいので、ファイルに残す
+# Flask は既定で静的ファイルを12時間キャッシュさせる。
+# 開発中はこれが致命的で、HTML/CSS/JS を直してもブラウザが古い版を出し続ける。
+# （実際にこれで「実装したのに画面に出ない」と1回ハマった）
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
+
+@app.after_request
+def _no_cache(resp):
+    """ブラウザにキャッシュさせない。開発用サーバーなので常にこれでよい。"""
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
+# ------------------------------------------------------------ オプション保存
 OPTIONS_PATH = os.path.join(ROOT, "user_options.json")
 
 
@@ -49,47 +68,24 @@ def _save_options(o: dict):
         pass  # 保存に失敗してもゲームは続行できる
 
 
-# PoC なのでゲームはプロセス内に1つだけ持つ
-STATE = {"game": None, "options": _load_options()}
-HUMAN = 0  # ブラウザで操作する側
+LAST_OPTIONS = {"value": _load_options()}
 
 # カード図鑑は内容が変わらないので、一度作ったら使い回す
 REFERENCE = None
 
 
-def _new_game(options=None) -> Game:
-    g = Game(names=("あなた", "CPU"), cpu=(False, True),
-             options=options if options is not None else STATE["options"])
-    g.start()
-    STATE["game"] = g
-    STATE["options"] = dict(g.options)
-    if options is not None:
-        _save_options(STATE["options"])
-    return g
+def _body() -> dict:
+    return request.get_json(silent=True) or {}
 
 
-def _game() -> Game:
-    if STATE["game"] is None:
-        _new_game()
-    return STATE["game"]
+def _fail(e: RoomError, code: int = 400):
+    return jsonify({"error": str(e)}), code
 
 
-def _advance_cpu(g: Game):
-    """人間の番になるまで CPU を進める。"""
-    guard = 0
-    while g.winner is None and g.players[g.current].is_cpu and guard < 50:
-        run_cpu_turn(g)
-        guard += 1
-
-
+# ==================================================================== ページ
 @app.route("/")
 def index():
     return send_from_directory(WEB_DIR, "index.html")
-
-
-@app.route("/api/state")
-def api_state():
-    return jsonify(_game().view(HUMAN))
 
 
 @app.route("/cards")
@@ -107,33 +103,107 @@ def api_reference():
     return jsonify(REFERENCE)
 
 
-@app.route("/api/new", methods=["POST"])
-def api_new():
-    body = request.get_json(silent=True) or {}
-    g = _new_game(body.get("options"))
-    _advance_cpu(g)
-    return jsonify(g.view(HUMAN))
+@app.route("/api/options")
+def api_options():
+    """前回選んだオプション。部屋を作る画面の初期値に使う。"""
+    return jsonify({"options": LAST_OPTIONS["value"]})
 
 
-@app.route("/api/action", methods=["POST"])
-def api_action():
-    g = _game()
-    action = (request.get_json(silent=True) or {}).get("action") or {}
-    ok = False
-    if g.winner is None and g.current == HUMAN:
-        ok = g.apply_action(action)
-        _advance_cpu(g)
-    view = g.view(HUMAN)
+# ====================================================================== 部屋
+@app.route("/api/room/create", methods=["POST"])
+def api_room_create():
+    b = _body()
+    mode = b.get("mode")
+    if mode not in ("cpu", "lan"):
+        return jsonify({"error": "モードの指定が不正です。"}), 400
+    options = b.get("options")
+    try:
+        room = REGISTRY.create(mode, options, b.get("name") or "")
+    except RoomError as e:
+        return _fail(e)
+    if options is not None:
+        LAST_OPTIONS["value"] = dict(room.options)
+        _save_options(LAST_OPTIONS["value"])
+    return jsonify({
+        "code": room.code,
+        "token": room.tokens[0],
+        "seat": 0,
+        "state": room.view(0),
+    })
+
+
+@app.route("/api/room/join", methods=["POST"])
+def api_room_join():
+    b = _body()
+    try:
+        room, token = REGISTRY.join(b.get("code") or "", b.get("name") or "")
+    except RoomError as e:
+        return _fail(e)
+    return jsonify({
+        "code": room.code,
+        "token": token,
+        "seat": 1,
+        "state": room.view(1),
+    })
+
+
+@app.route("/api/room/list")
+def api_room_list():
+    """まだ相手を待っているLAN部屋の一覧。合言葉を打たずに入れるようにするため。"""
+    return jsonify({"rooms": REGISTRY.open_rooms()})
+
+
+@app.route("/api/room/state")
+def api_room_state():
+    try:
+        room, seat = REGISTRY.authed(request.args.get("code"), request.args.get("token"))
+    except RoomError as e:
+        return _fail(e, 404)
+    return jsonify(room.view(seat))
+
+
+@app.route("/api/room/action", methods=["POST"])
+def api_room_action():
+    b = _body()
+    try:
+        room, seat = REGISTRY.authed(b.get("code"), b.get("token"))
+    except RoomError as e:
+        return _fail(e, 404)
+    ok = room.apply(seat, b.get("action") or {})
+    view = room.view(seat)
     view["accepted"] = ok
     return jsonify(view)
 
 
+@app.route("/api/room/rematch", methods=["POST"])
+def api_room_rematch():
+    """決着後にもう1試合。相手の画面にも自動で反映される。"""
+    b = _body()
+    try:
+        room, seat = REGISTRY.authed(b.get("code"), b.get("token"))
+    except RoomError as e:
+        return _fail(e, 404)
+    if room.mode == "lan" and not room.is_full:
+        return jsonify({"error": "相手がまだいません。"}), 400
+    options = b.get("options")
+    if options is not None:
+        for k in DEFAULT_OPTIONS:
+            if k in options:
+                room.options[k] = bool(options[k])
+        LAST_OPTIONS["value"] = dict(room.options)
+        _save_options(LAST_OPTIONS["value"])
+    room.start_game()
+    return jsonify(room.view(seat))
+
+
+# ==================================================================== 起動
 def main(host: str = "127.0.0.1", port: int = 5000, debug: bool = False):
-    _new_game()
     url = "http://{}:{}/".format("localhost" if host == "127.0.0.1" else host, port)
     print("=" * 56)
-    print("  🎴 おぐそーのカードゲーム PoC サーバー起動")
+    print("  🎴 おぐそーのカードゲーム サーバー起動")
     print("  ブラウザで開いてね →  {}".format(url))
+    if host == "0.0.0.0":
+        print("  ほかのPCからは、上に表示されたIPアドレスで接続してね")
     print("  止めるときは Ctrl+C")
     print("=" * 56)
-    app.run(host=host, port=port, debug=debug, use_reloader=False)
+    app.run(host=host, port=port, debug=debug, use_reloader=False, threaded=True)

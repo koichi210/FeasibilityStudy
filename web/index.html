@@ -9,13 +9,15 @@
 <body>
 
 <header class="topbar">
-  <div class="title">🎴 おぐそーのカードゲーム <span class="tag">PoC</span></div>
+  <div class="title">🎴 おぐそーのカードゲーム</div>
+  <span id="roomTag" class="tag hidden"></span>
   <div class="turninfo">
     <span id="turnLabel">ターン -</span>
     <span id="whoseTurn" class="badge">-</span>
   </div>
   <button id="optionBtn" class="btn btn-ghost">⚙️ オプション</button>
-  <button id="newGameBtn" class="btn btn-ghost">🔄 新しいゲーム</button>
+  <button id="newGameBtn" class="btn btn-ghost">🔄 もう一度</button>
+  <button id="leaveBtn" class="btn btn-ghost">🚪 モード選択へ</button>
 </header>
 
 <main class="layout">
@@ -110,6 +112,86 @@
   </aside>
 
 </main>
+
+<!-- ================= ロビー（モード選択・部屋） ================= -->
+<div id="lobby" class="overlay lobby">
+  <div class="lobbybox">
+
+    <!-- --- モード選択 --- -->
+    <div class="lobbyscreen active" id="lb-mode">
+      <div class="lobbytitle">🎴 おぐそーのカードゲーム</div>
+      <div class="lobbysub">遊びかたを選んでね</div>
+      <div class="modes">
+        <button class="modecard" id="btnCpu">
+          <div class="modeicon">🤖</div>
+          <div class="modename">CPU対戦</div>
+          <div class="modedesc">ひとりで遊ぶ。<br>ルールを覚えるならこっち</div>
+        </button>
+        <button class="modecard" id="btnLan">
+          <div class="modeicon">🌐</div>
+          <div class="modename">LAN対戦</div>
+          <div class="modedesc">同じネットワークの人と対戦。<br>相手に手札は見えません</div>
+        </button>
+      </div>
+      <div class="lobbyfoot">
+        <a href="/cards" target="_blank" rel="noopener" class="poplink">↗ カード図鑑を見る</a>
+      </div>
+    </div>
+
+    <!-- --- LANメニュー --- -->
+    <div class="lobbyscreen" id="lb-lan">
+      <div class="lobbytitle">🌐 LAN対戦</div>
+      <label class="namerow">
+        <span>あなたの名前</span>
+        <input type="text" id="playerName" maxlength="12" placeholder="なまえ">
+      </label>
+      <div class="modes">
+        <button class="modecard" id="btnMakeRoom">
+          <div class="modeicon">🏠</div>
+          <div class="modename">部屋を作る</div>
+          <div class="modedesc">合言葉が出るので<br>相手に伝えてね</div>
+        </button>
+        <button class="modecard" id="btnFindRoom">
+          <div class="modeicon">🔎</div>
+          <div class="modename">部屋に入る</div>
+          <div class="modedesc">相手が作った部屋に<br>参加する</div>
+        </button>
+      </div>
+      <div class="lobbyfoot"><button class="btn btn-end" data-back="lb-mode">← もどる</button></div>
+    </div>
+
+    <!-- --- 部屋を作る（待機） --- -->
+    <div class="lobbyscreen" id="lb-wait">
+      <div class="lobbytitle">🏠 相手を待っています…</div>
+      <div class="lobbysub">この合言葉を相手に伝えてね</div>
+      <div class="roomcode" id="roomCode">----</div>
+      <div class="waitnote">
+        相手は「LAN対戦 → 部屋に入る」から、この合言葉の部屋を選びます。<br>
+        同じネットワークにいれば、一覧にも自動で出ます。
+      </div>
+      <div class="spinner">⏳ 待機中…</div>
+      <div class="lobbyfoot"><button class="btn btn-end" data-back="lb-lan">← やめる</button></div>
+    </div>
+
+    <!-- --- 部屋に入る --- -->
+    <div class="lobbyscreen" id="lb-join">
+      <div class="lobbytitle">🔎 部屋に入る</div>
+      <div class="lobbysub">開いている部屋</div>
+      <div class="roomlist" id="roomList">さがしています…</div>
+      <div class="joinmanual">
+        <span>合言葉を直接入力：</span>
+        <input type="text" id="joinCode" maxlength="4" placeholder="ABCD">
+        <button class="btn btn-attack" id="btnJoinCode">入る</button>
+      </div>
+      <div class="lobbyfoot"><button class="btn btn-end" data-back="lb-lan">← もどる</button></div>
+    </div>
+
+    <div class="lobbyerr hidden" id="lobbyErr"></div>
+  </div>
+</div>
+
+<!-- ================= 相手待ち／切断のお知らせ ================= -->
+<div id="pauseBanner" class="pausebanner hidden"></div>
 
 <!-- ================= オプション ================= -->
 <div id="optionOverlay" class="overlay hidden">

@@ -19,6 +19,12 @@ let pollTimer = null;
 let roomListTimer = null;
 let busy = false;
 
+/* タッチ端末（スマホ・タブレット）かどうか。
+   スマホには「マウスを乗せる」が無いので、拡大表示をタップに切り替える。
+   マウスのあるPCでは従来どおりホバーで出す。 */
+const TOUCH = window.matchMedia && window.matchMedia("(hover: none)").matches;
+if (TOUCH) document.body.classList.add("touch");
+
 /* ============================================================== 通信 */
 async function api(path, body) {
   const opt = body
@@ -233,8 +239,14 @@ function monsterCard(m, opts) {
   if (m.fatigue > 0) el.classList.add("fatigued");
   if (opts.onClick) {
     el.classList.add("clickable");
-    el.addEventListener("click", opts.onClick);
     el.title = opts.title || "";
+  }
+  if (TOUCH) {
+    // スマホは「タップで詳細を開く → ボタンで実行」の2段階にする。
+    // 指が当たっただけで交代してしまう事故を防げるので、そのほうが安全。
+    el.addEventListener("click", () => openSheet(monsterZoom(m), opts.onClick, opts.actionLabel));
+  } else if (opts.onClick) {
+    el.addEventListener("click", opts.onClick);
   }
 
   const hpRate = Math.max(0, Math.min(1, m.hp / m.hp_max));
@@ -291,7 +303,12 @@ function itemCard(c, usable, onClick) {
   const el = document.createElement("div");
   el.className = "item-card " + (usable ? "usable" : "disabled");
   if (RED_SUITS.has(c.suit)) el.classList.add("red");
-  if (usable) el.addEventListener("click", onClick);
+  if (TOUCH) {
+    el.addEventListener("click", () => openSheet(
+      itemZoom(c, usable), usable ? onClick : null, "🎒 このカードを使う"));
+  } else if (usable) {
+    el.addEventListener("click", onClick);
+  }
   const text = c.effect ? c.effect.text : "";
   el.innerHTML =
     '<div class="item-head"><span>' + c.mark + "</span><span>" + c.rank_label + "</span></div>" +
@@ -313,6 +330,27 @@ function itemZoom(c, usable) {
 
 function zoomPop(inner, mine) {
   return '<div class="zoom-pop ' + (mine ? "zp-up" : "zp-down") + '">' + inner + "</div>";
+}
+
+/* ------------------------------------------ カード詳細シート（スマホ） */
+let sheetAction = null;
+
+function openSheet(html, action, label) {
+  $("sheetBody").innerHTML = html;
+  const btn = $("sheetAction");
+  sheetAction = action || null;
+  if (sheetAction) {
+    btn.textContent = label || "これを選ぶ";
+    btn.classList.remove("hidden");
+  } else {
+    btn.classList.add("hidden");
+  }
+  $("cardSheet").classList.remove("hidden");
+}
+
+function closeSheet() {
+  $("cardSheet").classList.add("hidden");
+  sheetAction = null;
 }
 
 /* ============================================================== 描画 */
@@ -381,6 +419,7 @@ function render() {
     benchBox.appendChild(monsterCard(m, {
       mine: true,
       onClick: swap ? () => send({ type: "swap", bench: i }) : null,
+      actionLabel: "🔄 バトル場と交代する",
       title: swap ? "クリックでバトル場と交代" : "",
     }));
   });
@@ -517,6 +556,15 @@ $("optionBtn").addEventListener("click", openOptions);
 $("optCancel").addEventListener("click", () => $("optionOverlay").classList.add("hidden"));
 $("optApply").addEventListener("click", applyOptions);
 $("optAbilities").addEventListener("change", syncOptionLock);
+$("sheetClose").addEventListener("click", closeSheet);
+$("sheetAction").addEventListener("click", () => {
+  const a = sheetAction;
+  closeSheet();
+  if (a) a();
+});
+$("cardSheet").addEventListener("click", (e) => {
+  if (e.target === $("cardSheet")) closeSheet();   // 外側をタップで閉じる
+});
 
 $("btnCpu").addEventListener("click", () => createRoom("cpu"));
 $("btnLan").addEventListener("click", () => {

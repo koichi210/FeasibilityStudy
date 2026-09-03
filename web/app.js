@@ -12,6 +12,7 @@ const STORE_KEY = "cardgame.session";
 const POLL_MS = 1200;
 
 let SESSION = null;   // {code, token, seat, mode}
+let RESUMABLE = null; // 「モード選択へ」で中断した対戦。あとから戻れるように保持する
 let STATE = null;     // サーバーから来た盤面
 let REF = null;       // カード図鑑（一度取ったら使い回す）
 let lastRev = -1;
@@ -67,6 +68,7 @@ function showLobby(screen) {
   document.querySelectorAll(".lobbyscreen").forEach((s) => s.classList.remove("active"));
   $(screen).classList.add("active");
   hideErr();
+  updateResumeUi();
   if (screen === "lb-join") startRoomList(); else stopRoomList();
   if (screen !== "lb-wait" && screen !== "lb-join") stopPolling();
 }
@@ -148,6 +150,7 @@ async function refreshRoomList() {
 /* ============================================================ ゲーム */
 function enterGame(view) {
   hideLobby();
+  RESUMABLE = null;   // 新しい対戦に入ったので、中断していたものはもう戻れない
   STATE = view;
   lastRev = -1;
   render();
@@ -208,12 +211,38 @@ async function rematch(options) {
   } catch (e) { showToast(e.message); }
 }
 
+/* モード選択へ戻る。
+   ⚠️ ここで対戦を捨ててはいけない。
+   うっかり押しただけで試合が消えるのは最悪なので、
+   セッションは残したまま「中断」扱いにして、あとから戻れるようにする。
+   実際に捨てるのは、新しい対戦を始めたとき（enterGame）だけ。 */
 function leaveRoom() {
   stopPolling();
-  SESSION = null;
-  STATE = null;
-  saveSession();
+  if (SESSION) RESUMABLE = SESSION;
   showLobby("lb-mode");
+}
+
+function updateResumeUi() {
+  const on = !!RESUMABLE;
+  $("btnResume").classList.toggle("hidden", !on);
+  $("resumeNote").classList.toggle("hidden", !on);
+}
+
+async function resumeGame() {
+  if (!RESUMABLE) return;
+  const s = RESUMABLE;
+  try {
+    const v = await api("/api/room/state?code=" + encodeURIComponent(s.code) +
+                        "&token=" + encodeURIComponent(s.token));
+    SESSION = s;
+    saveSession();
+    enterGame(v);
+  } catch (e) {
+    // 部屋が消えていた（サーバー再起動など）
+    RESUMABLE = null;
+    updateResumeUi();
+    showErr("中断していた対戦は、もう続きから遊べませんでした。新しく始めてね。");
+  }
 }
 
 function showToast(msg) {
@@ -590,9 +619,20 @@ $("joinCode").addEventListener("keydown", (e) => {
 });
 document.querySelectorAll("[data-back]").forEach((b) => {
   b.addEventListener("click", () => {
+    // 作りかけのLAN部屋から抜けるだけ。中断した対戦（RESUMABLE）はそのまま残す
     if (SESSION && SESSION.mode === "lan") { SESSION = null; saveSession(); stopPolling(); }
     showLobby(b.dataset.back);
   });
+});
+
+$("btnResume").addEventListener("click", resumeGame);
+
+/* モード選択の外側をタップしたら、中断した対戦にもどる。
+   「間違えてモード選択を開いてしまった」を1タップで取り消せるように。 */
+$("lobby").addEventListener("click", (e) => {
+  if (e.target !== $("lobby")) return;             // 中身のタップは無視
+  if (!$("lb-mode").classList.contains("active")) return;
+  if (RESUMABLE) resumeGame();
 });
 
 initTabs();

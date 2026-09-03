@@ -197,13 +197,59 @@ def api_room_rematch():
 
 
 # ==================================================================== 起動
-def main(host: str = "127.0.0.1", port: int = 5000, debug: bool = False):
-    url = "http://{}:{}/".format("localhost" if host == "127.0.0.1" else host, port)
-    print("=" * 56)
-    print("  🎴 おぐそーのカードゲーム サーバー起動")
-    print("  ブラウザで開いてね →  {}".format(url))
+def _local_ips():
+    """このPCがLAN内で持っているIPv4アドレスを集める。"""
+    import socket
+    ips = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith("127.") and not ip.startswith("169.254."):
+                ips.add(ip)
+    except Exception:
+        pass
+    try:
+        # 外に出るときに使うIPを調べる（実際には通信しない）
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ips.add(s.getsockname()[0])
+        s.close()
+    except Exception:
+        pass
+    return sorted(ips)
+
+
+def _url(hostpart: str, port: int) -> str:
+    """ポート80のときは :80 を省ける。"""
+    return "http://{}/".format(hostpart) if port == 80 \
+        else "http://{}:{}/".format(hostpart, port)
+
+
+def print_banner(host: str, port: int):
+    import socket
+    name = socket.gethostname().lower()
+    line = "=" * 62
+    print(line)
+    print("  🎴 おぐそーのカードゲーム  サーバー起動")
+    print(line)
     if host == "0.0.0.0":
-        print("  ほかのPCからは、上に表示されたIPアドレスで接続してね")
+        print("  📱 スマホ・ほかのPCから、このどれかを開いてね")
+        print("")
+        print("      {}        ← いちばん短い（同じLANのWindows PC）".format(_url(name, port)))
+        print("      {}  ← スマホ・Mac はこっち".format(_url(name + ".local", port)))
+        for ip in _local_ips():
+            print("      {}".format(_url(ip, port)))
+        print("")
+        print("  ⚠️ スマホは「モバイル通信」ではなく Wi-Fi に繋いでね")
+        print("  ⚠️ 初回は Windows の確認が出たら「アクセスを許可する」を選んでね")
+    else:
+        print("  ブラウザで開いてね →  {}".format(_url("localhost", port)))
+        print("  （ほかの機器からも繋ぐときは LAN対戦用に起動.bat を使ってね）")
+    print("")
     print("  止めるときは Ctrl+C")
-    print("=" * 56)
+    print(line)
+
+
+def main(host: str = "127.0.0.1", port: int = 5000, debug: bool = False):
+    print_banner(host, port)
     app.run(host=host, port=port, debug=debug, use_reloader=False, threaded=True)

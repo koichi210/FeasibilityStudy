@@ -245,14 +245,17 @@ body {
 /* ---------------------------------------------------------------- ロビー */
 .hidden { display: none !important; }
 
-/* ロビー表示中は、ゲーム用のボタンを隠す */
+/* ロビー表示中は、ゲーム用のボタンと盤面を隠す。
+   （半透明の背面にゲーム画面が透けて見えないように） */
 body.in-lobby .turninfo,
 body.in-lobby #optionBtn,
 body.in-lobby #newGameBtn,
 body.in-lobby #leaveBtn,
-body.in-lobby #roomTag { display: none; }
+body.in-lobby #roomTag,
+body.in-lobby .layout { display: none; }
+body.in-lobby { overflow: hidden; }
 
-.lobby { background: rgba(6,26,20,.94); }
+.lobby { background: radial-gradient(ellipse at 50% 35%, #16493a 0%, #0d2c22 65%, #07201a 100%); }
 .lobbybox {
   background: #12332a; border: 1px solid var(--line); border-radius: 20px;
   padding: 34px 40px; width: min(680px, 92vw);
@@ -262,6 +265,13 @@ body.in-lobby #roomTag { display: none; }
 .lobbyscreen.active { display: flex; }
 .lobbytitle { font-size: 24px; font-weight: 800; text-align: center; }
 .lobbysub { font-size: 13px; color: var(--muted); text-align: center; margin-top: -8px; }
+
+/* 中断した対戦にもどるボタン。押し間違いで試合が消えないための逃げ道 */
+.resumebtn { width: 100%; padding: 15px; font-size: 16px; }
+.resumenote {
+  font-size: 11.5px; color: var(--muted); text-align: center; margin-top: -10px;
+}
+.resumebtn.hidden, .resumenote.hidden { display: none; }
 
 .modes { display: flex; gap: 14px; flex-wrap: wrap; }
 .modecard {

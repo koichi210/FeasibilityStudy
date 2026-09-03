@@ -10,27 +10,61 @@
 """
 from __future__ import annotations
 
+import json
 import os
 
 from flask import Flask, jsonify, request, send_from_directory
 
 from engine.ai import run_cpu_turn
-from engine.game import Game
+from engine.game import DEFAULT_OPTIONS, Game
+from engine.reference import build_reference
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB_DIR = os.path.join(ROOT, "web")
 
 app = Flask(__name__, static_folder=WEB_DIR, static_url_path="/static")
 
+# オプションは次に起動したときも覚えていてほしいので、ファイルに残す
+OPTIONS_PATH = os.path.join(ROOT, "user_options.json")
+
+
+def _load_options() -> dict:
+    o = dict(DEFAULT_OPTIONS)
+    try:
+        with open(OPTIONS_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        for k in DEFAULT_OPTIONS:
+            if k in data:
+                o[k] = bool(data[k])
+    except Exception:
+        pass  # 無ければ／壊れていれば既定値でよい
+    return o
+
+
+def _save_options(o: dict):
+    try:
+        with open(OPTIONS_PATH, "w", encoding="utf-8") as f:
+            json.dump(o, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass  # 保存に失敗してもゲームは続行できる
+
+
 # PoC なのでゲームはプロセス内に1つだけ持つ
-STATE = {"game": None}
+STATE = {"game": None, "options": _load_options()}
 HUMAN = 0  # ブラウザで操作する側
 
+# カード図鑑は内容が変わらないので、一度作ったら使い回す
+REFERENCE = None
 
-def _new_game() -> Game:
-    g = Game(names=("あなた", "CPU"), cpu=(False, True))
+
+def _new_game(options=None) -> Game:
+    g = Game(names=("あなた", "CPU"), cpu=(False, True),
+             options=options if options is not None else STATE["options"])
     g.start()
     STATE["game"] = g
+    STATE["options"] = dict(g.options)
+    if options is not None:
+        _save_options(STATE["options"])
     return g
 
 
@@ -58,9 +92,25 @@ def api_state():
     return jsonify(_game().view(HUMAN))
 
 
+@app.route("/cards")
+def cards_page():
+    """カード図鑑の単独ページ。別タブで開いたり、印刷して早見表にしたりする用。"""
+    return send_from_directory(WEB_DIR, "cards.html")
+
+
+@app.route("/api/reference")
+def api_reference():
+    """カード図鑑のデータ。実際のカード定義から作るので表示がズレない。"""
+    global REFERENCE
+    if REFERENCE is None:
+        REFERENCE = build_reference()
+    return jsonify(REFERENCE)
+
+
 @app.route("/api/new", methods=["POST"])
 def api_new():
-    g = _new_game()
+    body = request.get_json(silent=True) or {}
+    g = _new_game(body.get("options"))
     _advance_cpu(g)
     return jsonify(g.view(HUMAN))
 

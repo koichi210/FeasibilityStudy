@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>カード図鑑 — おぐそーのカードゲーム</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="cardspage">
+
+<header class="topbar">
+  <div class="title">📚 カード図鑑</div>
+  <div class="turninfo"><span class="hint">ゲーム画面と並べて見られます</span></div>
+  <button id="printBtn" class="btn btn-ghost">🖨️ 印刷する</button>
+</header>
+
+<main class="cardsmain">
+
+  <section class="cardsec">
+    <h2>🎒 アイテムカード</h2>
+    <p class="secnote">
+      アイテムデッキは<b>両プレイヤーで共有の1箱</b>。毎ターン1枚引いて、<b>1ターンに1枚まで</b>使えます。
+    </p>
+    <div class="refbody" id="refItem">読み込み中…</div>
+  </section>
+
+  <section class="cardsec">
+    <h2>⚔️ モンスターカード</h2>
+    <p class="secnote">
+      自分のモンスターデッキ（52枚）から場に出ます。バトル場1枚＋ベンチ2枚。
+    </p>
+    <div class="refbody" id="refMonster">読み込み中…</div>
+  </section>
+
+</main>
+
+<script src="/static/reference.js"></script>
+<script>
+fetch("/api/reference")
+  .then((r) => r.json())
+  .then((ref) => {
+    document.getElementById("refItem").innerHTML = CardRef.itemHtml(ref, true);
+    document.getElementById("refMonster").innerHTML = CardRef.monsterHtml(ref, true);
+  })
+  .catch((e) => {
+    const msg = '<div class="ref-note">読み込みに失敗しました。ゲームのサーバーが起動しているか確認してください。<br>' + e + "</div>";
+    document.getElementById("refItem").innerHTML = msg;
+    document.getElementById("refMonster").innerHTML = "";
+  });
+
+document.getElementById("printBtn").addEventListener("click", () => window.print());
+</script>
+</body>
+</html>

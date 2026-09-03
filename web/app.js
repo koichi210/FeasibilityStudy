@@ -6,6 +6,7 @@ const $ = (id) => document.getElementById(id);
 const RED_SUITS = new Set(["H", "D"]);
 
 let STATE = null;
+let REF = null;      // カード図鑑データ（一度取ったら使い回す）
 let busy = false;
 
 /* ------------------------------------------------------------ 通信 */
@@ -37,6 +38,12 @@ async function send(action) {
 
 function setBusy(on) {
   document.body.style.cursor = on ? "progress" : "";
+}
+
+function escapeHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]
+  ));
 }
 
 /* ------------------------------------------------------- カード描画 */
@@ -81,8 +88,32 @@ function monsterCard(m, opts) {
       '" style="width:' + hpRate * 100 + '%"></div></div>' +
     '<div class="hptext">' + m.hp + " / " + m.hp_max + "</div>" +
     '<div class="badges">' + badges.join("") + "</div>" +
-    '<div class="ability">' + (m.ability ? escapeHtml(m.ability.text) : "") + "</div>";
+    '<div class="ability">' + (m.ability ? escapeHtml(m.ability.text) : "") + "</div>" +
+    zoomPop(monsterZoom(m), opts.mine);
   return el;
+}
+
+function monsterZoom(m) {
+  let h = '<div class="zp-head"><span class="zp-mark">' + m.mark + m.rank_label + "</span>" +
+            '<span class="zp-name">' + escapeHtml(m.name) + "</span></div>";
+  h += '<div class="zp-stats">⚔ 攻撃 <b>' + m.atk_now + "</b>　🛡 防御 <b>" + m.def_now +
+         "</b>　❤️ HP <b>" + m.hp + " / " + m.hp_max + "</b></div>";
+  if (m.ability) {
+    h += '<div class="zp-abname">✨ ' + escapeHtml(m.ability.name) + "</div>";
+    h += '<div class="zp-abtext">' + escapeHtml(m.ability.text) + "</div>";
+  } else {
+    h += '<div class="zp-abtext zp-none">技なし</div>';
+  }
+  const st = [];
+  if (m.fatigue > 0) st.push("😴 疲労中（あと" + m.fatigue + "ターン攻撃できない）");
+  if (m.poison > 0) st.push("☠️ 毒（毎ターン" + m.poison + "ダメージ）");
+  if (m.curse > 0) st.push("🩸 呪い（毎ターン" + m.curse + "ダメージ）");
+  if (m.is_demon) st.push("👹 魔王（あと" + m.demon_turns + "ターンで消滅）");
+  if (m.revived) st.push("🔥 不死鳥で復活済み（もう復活できない）");
+  st.push("🚪 あと " + m.attacks_left + " 回攻撃したら退場");
+  if ((m.equipment || []).length) st.push("🎒 装備: " + m.equipment.join(" / "));
+  h += '<div class="zp-status">' + st.map(escapeHtml).join("<br>") + "</div>";
+  return h;
 }
 
 function itemCard(c, usable, onClick) {
@@ -90,17 +121,27 @@ function itemCard(c, usable, onClick) {
   el.className = "item-card " + (usable ? "usable" : "disabled");
   if (RED_SUITS.has(c.suit)) el.classList.add("red");
   if (usable) el.addEventListener("click", onClick);
+  const text = c.effect ? c.effect.text : "";
   el.innerHTML =
     '<div class="item-head"><span>' + c.mark + "</span><span>" + c.rank_label + "</span></div>" +
     '<div class="item-name">' + escapeHtml(c.name) + "</div>" +
-    '<div class="item-text">' + escapeHtml(c.effect ? c.effect.text : "") + "</div>";
+    '<div class="item-text">' + escapeHtml(text) + "</div>" +
+    zoomPop(itemZoom(c, usable), true);
   return el;
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (ch) => (
-    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]
-  ));
+function itemZoom(c, usable) {
+  let h = '<div class="zp-head"><span class="zp-mark">' + c.mark + c.rank_label + "</span>" +
+            '<span class="zp-name">' + escapeHtml(c.name) + "</span></div>";
+  h += '<div class="zp-abtext">' + escapeHtml(c.effect ? c.effect.text : "") + "</div>";
+  h += '<div class="zp-status">' +
+         (usable ? "🖱️ クリックで使えます" : "⛔ いまは使えません（対象がいない／使用済みなど）") +
+       "</div>";
+  return h;
+}
+
+function zoomPop(inner, mine) {
+  return '<div class="zoom-pop ' + (mine ? "zp-up" : "zp-down") + '">' + inner + "</div>";
 }
 
 /* ------------------------------------------------------------ 描画 */
@@ -128,7 +169,7 @@ function render() {
   $("myHpFill").style.width = pct(me.trainer_hp, me.trainer_hp_max);
   $("myCounts").textContent =
     "🃏 山札 " + me.deck_count + "　🗑️ 捨札 " + me.discard_count +
-    "　🎒 アイテム山 " + STATE.item_deck_count;
+    "　🎒 アイテム山 " + STATE.item_deck_count + "　" + optionSummary();
 
   // --- 場 ---
   fill($("opBattle"), [op.battle], { mine: false });
@@ -191,6 +232,14 @@ function render() {
   }
 }
 
+function optionSummary() {
+  const o = (STATE && STATE.options) || {};
+  const off = [];
+  if (!o.monster_abilities) off.push("技なし");
+  else if (!o.demon_lord) off.push("魔王なし");
+  return off.length ? "⚙️ " + off.join("・") : "";
+}
+
 function hintText(st, me, byType) {
   if (st.winner !== null && st.winner !== undefined) return "ゲーム終了";
   if (!st.is_my_turn) return "CPUが考え中…";
@@ -213,6 +262,56 @@ function pct(v, max) {
   return Math.max(0, Math.min(100, (v / max) * 100)) + "%";
 }
 
+/* ------------------------------------------------------ タブと図鑑 */
+function initTabs() {
+  document.querySelectorAll(".tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".tabpanel").forEach((p) => p.classList.remove("active"));
+      btn.classList.add("active");
+      $("panel-" + btn.dataset.tab).classList.add("active");
+      if (btn.dataset.tab !== "log") loadReference();
+    });
+  });
+}
+
+async function loadReference() {
+  if (REF) return;
+  try {
+    REF = await api("/api/reference");
+    $("refItem").innerHTML = CardRef.itemHtml(REF, false);
+    $("refMonster").innerHTML = CardRef.monsterHtml(REF, false);
+  } catch (e) {
+    $("refItem").innerHTML = '<div class="ref-note">読み込みに失敗しました: ' + e + "</div>";
+  }
+}
+
+/* ------------------------------------------------------ オプション */
+function openOptions() {
+  const o = (STATE && STATE.options) || {};
+  $("optAbilities").checked = !!o.monster_abilities;
+  $("optDemon").checked = !!o.demon_lord;
+  syncOptionLock();
+  $("optionOverlay").classList.remove("hidden");
+}
+
+function syncOptionLock() {
+  // 技がオフなら、魔王（♠Aの技）も使えない
+  const on = $("optAbilities").checked;
+  $("optDemon").disabled = !on;
+  if (!on) $("optDemon").checked = false;
+}
+
+async function applyOptions() {
+  const options = {
+    monster_abilities: $("optAbilities").checked,
+    demon_lord: $("optAbilities").checked && $("optDemon").checked,
+  };
+  $("optionOverlay").classList.add("hidden");
+  STATE = await api("/api/new", { options: options });
+  render();
+}
+
 /* ------------------------------------------------------------ 起動 */
 $("attackBtn").addEventListener("click", () => send({ type: "attack" }));
 $("endTurnBtn").addEventListener("click", () => send({ type: "end_turn" }));
@@ -224,5 +323,10 @@ $("ovBtn").addEventListener("click", async () => {
   STATE = await api("/api/new", {});
   render();
 });
+$("optionBtn").addEventListener("click", openOptions);
+$("optCancel").addEventListener("click", () => $("optionOverlay").classList.add("hidden"));
+$("optApply").addEventListener("click", applyOptions);
+$("optAbilities").addEventListener("change", syncOptionLock);
 
+initTabs();
 refresh();

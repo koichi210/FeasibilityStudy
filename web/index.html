@@ -14,6 +14,7 @@
     <span id="turnLabel">ターン -</span>
     <span id="whoseTurn" class="badge">-</span>
   </div>
+  <button id="optionBtn" class="btn btn-ghost">⚙️ オプション</button>
   <button id="newGameBtn" class="btn btn-ghost">🔄 新しいゲーム</button>
 </header>
 
@@ -67,7 +68,9 @@
 
     <!-- ================= 手札 ================= -->
     <div class="hand-zone">
-      <div class="zone-label">🎒 アイテム手札 <span class="hint">（クリックで使用・1ターン1枚）</span></div>
+      <div class="zone-label">🎒 アイテム手札
+        <span class="hint">（クリックで使用・1ターン1枚／マウスを乗せると拡大🔍）</span>
+      </div>
       <div class="hand" id="myHand"></div>
     </div>
 
@@ -79,14 +82,71 @@
 
   </section>
 
-  <!-- ================= ログ ================= -->
-  <aside class="logpane">
-    <div class="zone-label">📜 バトルログ</div>
-    <div class="loglist" id="logList"></div>
+  <!-- ================= 右パネル（タブ切り替え） ================= -->
+  <aside class="sidepane">
+    <div class="tabs">
+      <button class="tab active" data-tab="log">📜 ログ</button>
+      <button class="tab" data-tab="item">🎒 アイテム</button>
+      <button class="tab" data-tab="monster">⚔️ モンスター</button>
+    </div>
+
+    <div class="tabbody">
+      <div class="tabpanel active" id="panel-log">
+        <div class="loglist" id="logList"></div>
+      </div>
+      <div class="tabpanel" id="panel-item">
+        <div class="refbody" id="refItem">読み込み中…</div>
+      </div>
+      <div class="tabpanel" id="panel-monster">
+        <div class="refbody" id="refMonster">読み込み中…</div>
+      </div>
+    </div>
+
+    <div class="paneFoot">
+      <a href="/cards" target="_blank" rel="noopener" class="poplink">
+        ↗ カード図鑑を別ウィンドウで開く（印刷もできる）
+      </a>
+    </div>
   </aside>
 
 </main>
 
+<!-- ================= オプション ================= -->
+<div id="optionOverlay" class="overlay hidden">
+  <div class="overlay-box optbox">
+    <div class="overlay-title">⚙️</div>
+    <div class="overlay-text">ゲームオプション</div>
+
+    <label class="optrow">
+      <input type="checkbox" id="optAbilities">
+      <span class="optlabel">⚔️ モンスターの技を使う</span>
+      <span class="optdesc">
+        オフにすると、J・Q・K・A の特殊能力が発動しなくなります。<br>
+        ルールがシンプルになるので、はじめての人におすすめ。
+      </span>
+    </label>
+
+    <label class="optrow">
+      <input type="checkbox" id="optDemon">
+      <span class="optlabel">👹 魔王（♠A）を使う</span>
+      <span class="optdesc">
+        オフにすると、♠A を出しても魔王が降臨しなくなります。<br>
+        ※「モンスターの技」がオフのときは、こちらもオフになります。
+      </span>
+    </label>
+
+    <div class="optnote">
+      設定を変えると<b>新しいゲームが始まります</b>（いまの試合は終了します）。
+    </div>
+
+    <div class="optbtns">
+      <button id="optApply" class="btn btn-attack">この設定で始める</button>
+      <button id="optCancel" class="btn btn-end">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 決着 ================= -->
 <div id="overlay" class="overlay hidden">
   <div class="overlay-box">
     <div class="overlay-title" id="ovTitle">🏆</div>
@@ -95,6 +155,7 @@
   </div>
 </div>
 
+<script src="/static/reference.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

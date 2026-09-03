@@ -22,6 +22,19 @@ B = BALANCE
 AV = B["ability_values"]
 DEMON = B["demon_lord"]
 
+# ゲームオプション。新しいゲームを始めるときに指定する。
+#   monster_abilities … J/Q/K/A の特殊能力を使うか。オフだとルールがぐっと単純になる
+#   demon_lord        … ♠A の魔王を使うか（技オフのときは自動的にオフ扱い）
+DEFAULT_OPTIONS = {
+    "monster_abilities": True,
+    "demon_lord": True,
+}
+
+OPTION_LABELS = {
+    "monster_abilities": "モンスターの技",
+    "demon_lord": "魔王（♠A）",
+}
+
 
 # ==========================================================================
 # 場に出ているモンスター1体分の状態
@@ -45,9 +58,12 @@ class Monster:
     revived: bool = False     # 不死鳥を使ったか
     is_demon: bool = False
     demon_turns: int = 0
+    ability_enabled: bool = True   # 「技なし」オプション時は False
 
     @property
     def ability_id(self) -> Optional[str]:
+        if not self.ability_enabled:
+            return None
         return self.card.ability.id if self.card.ability else None
 
     @property
@@ -56,6 +72,8 @@ class Monster:
 
     def to_dict(self) -> dict:
         d = self.card.to_dict()
+        if not self.ability_enabled:
+            d.pop("ability", None)
         d.update({
             "uid": self.uid,
             "hp": self.hp,
@@ -115,7 +133,17 @@ class Game:
     MAX_TURNS = 200
 
     def __init__(self, seed: Optional[int] = None,
-                 names=("あなた", "CPU"), cpu=(False, True)):
+                 names=("あなた", "CPU"), cpu=(False, True),
+                 options: Optional[dict] = None):
+        self.options = dict(DEFAULT_OPTIONS)
+        if options:
+            # 知らないキーは無視する（古い設定が残っていても壊れないように）
+            for k in DEFAULT_OPTIONS:
+                if k in options:
+                    self.options[k] = bool(options[k])
+        # 技オフなら魔王も出ない（魔王は ♠A の技なので）
+        if not self.options["monster_abilities"]:
+            self.options["demon_lord"] = False
         self.rng = random.Random(seed)
         self.uid_seq = 0
         self.turn = 0
@@ -189,7 +217,8 @@ class Game:
     def _spawn(self, p: Player, card: Card) -> Monster:
         m = Monster(card=card, uid=self._next_uid(),
                     hp=B["monster_hp"], hp_max=B["monster_hp"],
-                    base_atk=card.atk, base_def=card.dfn)
+                    base_atk=card.atk, base_def=card.dfn,
+                    ability_enabled=self.options["monster_abilities"])
         return m
 
     # --------------------------------------------------------------- 場補充
@@ -228,6 +257,8 @@ class Game:
     # ----------------------------------------------------------- 登場時効果
     def _on_enter(self, p: Player, m: Monster, silent: bool = False):
         aid = m.ability_id
+        if aid == "S_A_demon" and not self.options["demon_lord"]:
+            return  # 魔王なしオプション。♠A はただのカードとして場に残る
         if aid == "S_A_demon":
             m.is_demon = True
             m.hp = m.hp_max = DEMON["hp"]
@@ -675,6 +706,8 @@ class Game:
         return {
             "turn": self.turn,
             "current": self.current,
+            "options": dict(self.options),
+            "option_labels": dict(OPTION_LABELS),
             "is_my_turn": self.current == viewer,
             "viewer": viewer,
             "me": side(me, hide_hand=False),

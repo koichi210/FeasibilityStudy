@@ -7,6 +7,9 @@ venv/
 # バックアップzip（gitで管理済みなので二重管理しない）
 _backups/
 
+# 個人のゲームオプション設定（人によって違うのでgitでは管理しない）
+user_options.json
+
 # OS / エディタ
 Thumbs.db
 desktop.ini

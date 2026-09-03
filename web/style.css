@@ -168,6 +168,7 @@ body {
   border: 2px solid transparent; box-shadow: 0 4px 10px rgba(0,0,0,.3);
   display: flex; flex-direction: column; gap: 5px;
   transition: transform .12s ease, box-shadow .12s ease;
+  position: relative;   /* ホバー拡大の吹き出しを載せるため */
 }
 .item-card.red { color: #a8221e; }
 .item-card.usable { cursor: pointer; border-color: var(--gold); }
@@ -195,15 +196,33 @@ body {
 .btn-ghost  { background: rgba(255,255,255,.12); color: var(--text); padding: 7px 14px; font-size: 13px; }
 .acthint { font-size: 12px; color: var(--muted); }
 
-/* -------------------------------------------------------------------- ログ */
-.logpane {
+/* ------------------------------------------------- 右パネル（タブ切り替え）*/
+.sidepane {
   background: var(--panel); border: 1px solid var(--line);
-  border-radius: 14px; padding: 12px 14px;
+  border-radius: 14px; padding: 10px 12px 8px;
   position: sticky; top: 66px; max-height: calc(100vh - 100px);
-  display: flex; flex-direction: column;
+  display: flex; flex-direction: column; min-height: 0;
 }
+.tabs { display: flex; gap: 4px; margin-bottom: 8px; flex: 0 0 auto; }
+.tab {
+  flex: 1; padding: 7px 4px; font-size: 12px; font-weight: 700;
+  border: none; border-radius: 8px 8px 0 0; cursor: pointer;
+  background: rgba(255,255,255,.08); color: var(--muted);
+  font-family: inherit; transition: background .12s ease, color .12s ease;
+}
+.tab:hover { background: rgba(255,255,255,.16); color: var(--text); }
+.tab.active { background: var(--gold); color: #3a2a00; }
+
+.tabbody { flex: 1 1 auto; min-height: 0; display: flex; }
+.tabpanel { display: none; flex: 1; min-height: 0; overflow-y: auto; }
+.tabpanel.active { display: block; }
+
+.paneFoot { flex: 0 0 auto; padding-top: 8px; border-top: 1px solid var(--line); margin-top: 8px; }
+.poplink { font-size: 11.5px; color: var(--gold); text-decoration: none; }
+.poplink:hover { text-decoration: underline; }
+
 .loglist {
-  overflow-y: auto; font-size: 12px; line-height: 1.6;
+  font-size: 12px; line-height: 1.6;
   display: flex; flex-direction: column; gap: 2px;
 }
 .loglist div { padding: 2px 4px; border-radius: 4px; }
@@ -222,3 +241,128 @@ body {
 }
 .overlay-title { font-size: 46px; }
 .overlay-text  { font-size: 17px; font-weight: 700; }
+
+/* ---------------------------------------------------------- オプション */
+.optbox { max-width: 460px; text-align: left; }
+.optbox .overlay-title, .optbox .overlay-text { text-align: center; }
+.optrow {
+  display: grid; grid-template-columns: 22px 1fr; gap: 4px 8px;
+  padding: 12px; border-radius: 10px; cursor: pointer;
+  background: rgba(255,255,255,.06); border: 1px solid var(--line);
+}
+.optrow:hover { background: rgba(255,255,255,.1); }
+.optrow input { width: 17px; height: 17px; margin: 2px 0 0; cursor: pointer; }
+.optlabel { font-weight: 800; font-size: 14px; }
+.optdesc { grid-column: 2; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+.optrow input:disabled { cursor: not-allowed; }
+.optrow input:disabled ~ .optlabel { opacity: .45; }
+.optrow input:disabled ~ .optdesc { opacity: .45; }
+.optnote { font-size: 11.5px; color: var(--muted); text-align: center; }
+.optbtns { display: flex; gap: 10px; justify-content: center; }
+
+/* ------------------------------------------------------ ホバー拡大表示 */
+.zoom-pop {
+  position: absolute; left: 50%; transform: translateX(-50%) scale(.96);
+  width: 250px; z-index: 40;
+  background: #12332a; color: var(--text);
+  border: 1px solid var(--gold); border-radius: 10px;
+  padding: 10px 12px; box-shadow: 0 12px 30px rgba(0,0,0,.6);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .12s ease, transform .12s ease;
+}
+.zoom-pop.zp-up   { bottom: calc(100% + 8px); }
+.zoom-pop.zp-down { top: calc(100% + 8px); }
+.card:hover > .zoom-pop,
+.item-card:hover > .zoom-pop {
+  opacity: 1; visibility: visible; transform: translateX(-50%) scale(1);
+}
+.zp-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.zp-mark { font-size: 19px; font-weight: 800; color: var(--gold); }
+.zp-name { font-size: 14px; font-weight: 800; }
+.zp-stats { font-size: 12px; color: #cfe6db; margin-bottom: 7px; }
+.zp-abname { font-size: 12px; font-weight: 800; color: var(--gold); }
+.zp-abtext { font-size: 12px; line-height: 1.55; margin-bottom: 7px; }
+.zp-none { color: var(--muted); }
+.zp-status {
+  font-size: 11px; line-height: 1.6; color: var(--muted);
+  border-top: 1px dashed var(--line); padding-top: 6px;
+}
+
+/* ------------------------------------------------------------ カード図鑑 */
+.refbody { font-size: 12px; line-height: 1.6; }
+.ref-lead {
+  margin: 14px 0 8px; font-size: 12.5px;
+  padding: 6px 9px; border-radius: 8px;
+  background: rgba(242,193,78,.14); border-left: 3px solid var(--gold);
+}
+.ref-lead:first-child { margin-top: 2px; }
+.ref-note {
+  font-size: 11.5px; color: var(--muted); line-height: 1.7;
+  background: rgba(0,0,0,.2); border-radius: 8px; padding: 8px 10px; margin-bottom: 4px;
+}
+.ref-rules { display: flex; flex-direction: column; gap: 6px; }
+.ref-rule {
+  background: rgba(255,255,255,.06); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 9px;
+}
+.ref-rule-head { display: flex; align-items: baseline; gap: 7px; }
+.ref-mark { font-size: 17px; font-weight: 800; }
+.ref-red   .ref-mark, .ref-red   .ref-group-head .ref-mark { color: #ff8b86; }
+.ref-black .ref-mark, .ref-black .ref-group-head .ref-mark { color: #cfe6db; }
+.ref-role { font-size: 12px; font-weight: 800; }
+.ref-rule-body { font-size: 12px; margin-top: 3px; }
+.ref-rule-eg { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+.ref-group { margin-bottom: 10px; }
+.ref-group-head {
+  font-size: 12.5px; font-weight: 800; margin-bottom: 4px;
+  display: flex; align-items: baseline; gap: 7px;
+}
+.ref-group-role { font-size: 11px; color: var(--muted); font-weight: 400; }
+.ref-table { width: 100%; border-collapse: collapse; }
+.ref-table td {
+  padding: 4px 5px; border-bottom: 1px solid rgba(255,255,255,.07);
+  vertical-align: top; font-size: 11.5px;
+}
+.ref-table tr:last-child td { border-bottom: none; }
+.ref-c { width: 34px; font-weight: 800; white-space: nowrap; }
+.ref-n { width: 92px; font-weight: 700; }
+.ref-s { width: 76px; color: var(--muted); white-space: nowrap; }
+.ref-t { color: #d6e8e0; }
+.ref-red .ref-c { color: #ff8b86; }
+.ref-demon {
+  background: linear-gradient(160deg, #3b1050, #170526);
+  border: 1px solid #a24bd8; border-radius: 8px; padding: 9px 11px;
+  font-size: 12px; line-height: 1.6; color: #f4d9ff;
+}
+.ref-numgrid { display: flex; flex-direction: column; gap: 4px; }
+
+/* ------------------------------------------------- カード図鑑の単独ページ */
+.cardsmain { padding: 18px; display: flex; flex-direction: column; gap: 20px; max-width: 1100px; }
+.cardsec {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 14px; padding: 16px 20px;
+}
+.cardsec h2 { margin: 0 0 4px; font-size: 19px; }
+.secnote { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+.cardspage .ref-numgrid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px;
+}
+.cardspage .ref-rules {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px;
+}
+.cardspage .refbody { font-size: 13px; }
+
+@media print {
+  body { background: #fff; color: #111; }
+  .topbar, .poplink { display: none !important; }
+  .cardsmain { max-width: none; padding: 0; }
+  .cardsec { background: #fff; border: none; padding: 0 0 14px; break-inside: avoid; }
+  .ref-lead { background: #f0f0f0; color: #111; }
+  .ref-rule, .ref-note { background: #f7f7f7; color: #111; border-color: #ccc; }
+  .ref-table td { color: #111; border-bottom: 1px solid #ddd; }
+  .ref-t, .ref-s, .ref-rule-eg, .secnote { color: #333; }
+  .ref-black .ref-mark, .ref-black .ref-c { color: #111; }
+  .ref-red .ref-mark, .ref-red .ref-c { color: #c0201c; }
+  .ref-demon { background: #eee; color: #111; border-color: #999; }
+}

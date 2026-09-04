@@ -159,7 +159,8 @@ FACE_ABILITIES: Dict[str, Dict[str, str]] = {
     "CA": {"name": "賢者", "id": "C_A_sage",
            "text": "登場時、アイテムを手札上限まで補充する"},
     "SA": {"name": "魔王降臨", "id": "S_A_demon",
-           "text": "登場時、魔王に変身（HP{} 攻{} 防{} / {}ターンで消滅・魔王同士は攻撃不可）".format(
+           "text": "登場時、魔王に変身（HP{} 攻{} 防{} / バトル場にいる間{}ターンで消滅・"
+                   "ベンチにいる間はカウントされない・魔王同士は攻撃不可）".format(
                BALANCE["demon_lord"]["hp"], BALANCE["demon_lord"]["atk"],
                BALANCE["demon_lord"]["def"], BALANCE["demon_lord"]["turns"])},
 }

@@ -111,6 +111,7 @@ class Player:
     battle: Optional[Monster] = None
     bench: List[Optional[Monster]] = field(default_factory=list)
     hand: List[Card] = field(default_factory=list)
+    monster_hand: List[Card] = field(default_factory=list)  # 引いたがまだ場に出していないモンスター
     item_used: bool = False
     swaps_left: int = 0
     attacked: bool = False
@@ -171,7 +172,7 @@ class Game:
         for p in self.players:
             for _ in range(B["initial_hand_size"]):
                 self._draw_item(p, silent=True)
-            self._refill_field(p, silent=True)
+            self._refill_field(p, silent=True, instant=True)
 
         self.turn = 1
         self.current = 0
@@ -222,18 +223,28 @@ class Game:
         return m
 
     # --------------------------------------------------------------- 場補充
-    def _refill_field(self, p: Player, silent: bool = False):
-        """バトル場・ベンチの空きを埋める。バトル場はベンチからの繰り上げを優先。"""
+    def _refill_field(self, p: Player, silent: bool = False, instant: bool = False):
+        """バトル場の繰り上げと、モンスターの補充を行う。
+
+        通常（instant=False）は、補充された分をモンスター手札に置くだけ。
+        実際にバトル場・ベンチへ置くのは、プレイヤー（またはCPU）の
+        「配置」操作（apply_action の type="place"）。
+
+        instant=True は **ゲーム開始時専用**。手札を経由すると、先攻が
+        「配置→攻撃」を済ませる間、後攻はまだ1度も配置できておらず
+        バトル場が空のまま＝直接攻撃され放題、という不公平が起きる。
+        それを避けるため、初期配置だけは両者同時に山札から直接場へ出す。
+        """
+        # バトル場が空いていたら、ベンチから一番元気なものを繰り上げる（これは常に自動）
         if p.battle is None:
             candidates = [(i, m) for i, m in enumerate(p.bench) if m]
             if candidates:
-                # ベンチで一番元気なものを繰り上げる
                 i, m = max(candidates, key=lambda t: (t[1].hp, t[1].base_atk))
                 p.bench[i] = None
                 p.battle = m
                 if not silent:
                     self._say("🔀 {}：ベンチの {} がバトル場へ".format(p.name, self._nm(m)))
-            else:
+            elif instant:
                 card = self._draw_monster(p)
                 if card:
                     p.battle = self._spawn(p, card)
@@ -241,15 +252,28 @@ class Game:
                         self._say("🆕 {}：バトル場に {} が登場".format(p.name, self._nm(p.battle)))
                     self._on_enter(p, p.battle, silent)
 
-        for i in range(len(p.bench)):
-            if p.bench[i] is None:
-                card = self._draw_monster(p)
-                if not card:
-                    break
-                p.bench[i] = self._spawn(p, card)
-                if not silent:
-                    self._say("🆕 {}：ベンチに {} が登場".format(p.name, self._nm(p.bench[i])))
-                self._on_enter(p, p.bench[i], silent)
+        if instant:
+            for i in range(len(p.bench)):
+                if p.bench[i] is None:
+                    card = self._draw_monster(p)
+                    if not card:
+                        break
+                    p.bench[i] = self._spawn(p, card)
+                    if not silent:
+                        self._say("🆕 {}：ベンチに {} が登場".format(p.name, self._nm(p.bench[i])))
+                    self._on_enter(p, p.bench[i], silent)
+            return
+
+        # 空いている枠の数だけ、山札からモンスター手札に引く。置き場所はあとで選ぶ。
+        empty = (1 if p.battle is None else 0) + sum(1 for b in p.bench if b is None)
+        while len(p.monster_hand) < empty:
+            card = self._draw_monster(p)
+            if not card:
+                break
+            p.monster_hand.append(card)
+            if not silent:
+                self._say("🃏 {} が {} をモンスター手札に加えた".format(
+                    p.name, "{}{}".format(card.label, card.name)))
 
     def _nm(self, m: Monster) -> str:
         return "魔王" if m.is_demon else "{} {}".format(m.card.label, m.card.name)
@@ -311,13 +335,12 @@ class Game:
                 self._say("💚 ヒーリングナイト：{} の場のモンスターが{}回復".format(p.name, v))
                 break
 
-        # 魔王のカウントダウン
-        for m in list(p.field_monsters()):
-            if m.is_demon and m.demon_turns > 0:
-                m.demon_turns -= 1
-                if m.demon_turns <= 0:
-                    self._say("👹 {} の魔王が消滅した".format(p.name))
-                    self._remove(p, m, to_discard=True)
+        # 魔王のカウントダウン：バトル場にいる間だけ減る。ベンチにいる間は消滅しない
+        if p.battle and p.battle.is_demon and p.battle.demon_turns > 0:
+            p.battle.demon_turns -= 1
+            if p.battle.demon_turns <= 0:
+                self._say("👹 {} の魔王が消滅した".format(p.name))
+                self._remove(p, p.battle, to_discard=True)
 
         if self.winner is None:
             self._refill_field(p)
@@ -350,6 +373,16 @@ class Game:
             if not (p.battle.is_demon and o.battle and o.battle.is_demon):
                 target = "相手トレーナー（直接攻撃）" if o.battle is None else self._nm(o.battle)
                 acts.append({"type": "attack", "label": "⚔️ 攻撃 → {}".format(target)})
+
+        # モンスター配置（手札にいるモンスターを、空いている場に出す）
+        for i, c in enumerate(p.monster_hand):
+            if p.battle is None:
+                acts.append({"type": "place", "hand": i, "slot": "battle",
+                             "label": "🃏 {}{} をバトル場に配置".format(c.label, c.name)})
+            for j, b in enumerate(p.bench):
+                if b is None:
+                    acts.append({"type": "place", "hand": i, "slot": j,
+                                 "label": "🃏 {}{} をベンチに配置".format(c.label, c.name)})
 
         # 交代
         if p.swaps_left > 0:
@@ -414,6 +447,25 @@ class Game:
             p.swaps_left -= 1
             p.battle, p.bench[i] = p.bench[i], p.battle
             self._say("🔄 {}：{} と交代".format(p.name, self._nm(p.battle)))
+        elif t == "place":
+            i = action.get("hand", -1)
+            slot = action.get("slot")
+            if not (0 <= i < len(p.monster_hand)):
+                return False
+            if slot == "battle":
+                if p.battle is not None:
+                    return False
+                card = p.monster_hand.pop(i)
+                p.battle = self._spawn(p, card)
+                self._say("🆕 {}：バトル場に {} が登場".format(p.name, self._nm(p.battle)))
+                self._on_enter(p, p.battle)
+            elif isinstance(slot, int) and 0 <= slot < len(p.bench) and p.bench[slot] is None:
+                card = p.monster_hand.pop(i)
+                p.bench[slot] = self._spawn(p, card)
+                self._say("🆕 {}：ベンチに {} が登場".format(p.name, self._nm(p.bench[slot])))
+                self._on_enter(p, p.bench[slot])
+            else:
+                return False
         elif t == "item":
             i = action.get("hand", -1)
             if p.item_used or not (0 <= i < len(p.hand)):
@@ -615,14 +667,10 @@ class Game:
             p.swaps_left += 1
             self._say("🔄 交代権を1回追加")
         elif t == "deploy":
-            for i, m in enumerate(p.bench):
-                if m is None:
-                    card = self._draw_monster(p)
-                    if card:
-                        p.bench[i] = self._spawn(p, card)
-                        self._say("🆕 号令：ベンチに {} が登場".format(self._nm(p.bench[i])))
-                        self._on_enter(p, p.bench[i])
-                    break
+            card = self._draw_monster(p)
+            if card:
+                p.monster_hand.append(card)
+                self._say("🃏 号令：{}{} をモンスター手札に追加".format(card.label, card.name))
         elif t == "draw_items":
             n = 0
             for _ in range(v):
@@ -635,12 +683,8 @@ class Game:
             if monsters:
                 best = max(monsters, key=lambda x: x.atk + x.dfn)
                 p.discard.remove(best)
-                for i, m in enumerate(p.bench):
-                    if m is None:
-                        p.bench[i] = self._spawn(p, best)
-                        self._say("🕊️ 蘇生：{} がベンチに戻った".format(self._nm(p.bench[i])))
-                        self._on_enter(p, p.bench[i])
-                        break
+                p.monster_hand.append(best)
+                self._say("🕊️ 蘇生：{}{} をモンスター手札に戻した".format(best.label, best.name))
         elif t == "sacrifice":
             target = p.battle
             self._say("🩸 生贄の儀式：{} を捧げた".format(self._nm(target)))
@@ -696,6 +740,8 @@ class Game:
                 "bench": [m.to_dict() if m else None for m in p.bench],
                 "hand": ([] if hide_hand else [c.to_dict() for c in p.hand]),
                 "hand_count": len(p.hand),
+                "monster_hand": ([] if hide_hand else [c.to_dict() for c in p.monster_hand]),
+                "monster_hand_count": len(p.monster_hand),
                 "deck_count": len(p.deck),
                 "discard_count": len(p.discard),
                 "item_used": p.item_used,

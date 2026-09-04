@@ -19,6 +19,7 @@ import os
 
 from flask import Flask, jsonify, request, send_from_directory
 
+from engine.ai import CPU_LEVEL_LABELS, CPU_LEVELS, DEFAULT_CPU_LEVEL
 from engine.game import DEFAULT_OPTIONS
 from engine.reference import build_reference
 from server.rooms import REGISTRY, RoomError
@@ -49,12 +50,15 @@ OPTIONS_PATH = os.path.join(ROOT, "user_options.json")
 
 def _load_options() -> dict:
     o = dict(DEFAULT_OPTIONS)
+    o["cpu_level"] = DEFAULT_CPU_LEVEL
     try:
         with open(OPTIONS_PATH, encoding="utf-8") as f:
             data = json.load(f)
         for k in DEFAULT_OPTIONS:
             if k in data:
                 o[k] = bool(data[k])
+        if data.get("cpu_level") in CPU_LEVELS:
+            o["cpu_level"] = data["cpu_level"]
     except Exception:
         pass  # 無ければ／壊れていれば既定値でよい
     return o
@@ -106,7 +110,10 @@ def api_reference():
 @app.route("/api/options")
 def api_options():
     """前回選んだオプション。部屋を作る画面の初期値に使う。"""
-    return jsonify({"options": LAST_OPTIONS["value"]})
+    return jsonify({
+        "options": LAST_OPTIONS["value"],
+        "cpu_levels": CPU_LEVEL_LABELS,
+    })
 
 
 # ====================================================================== 部屋
@@ -117,13 +124,19 @@ def api_room_create():
     if mode not in ("cpu", "lan"):
         return jsonify({"error": "モードの指定が不正です。"}), 400
     options = b.get("options")
+    cpu_level = b.get("cpu_level")
+    if cpu_level not in CPU_LEVELS:
+        cpu_level = LAST_OPTIONS["value"].get("cpu_level", DEFAULT_CPU_LEVEL)
     try:
-        room = REGISTRY.create(mode, options, b.get("name") or "")
+        room = REGISTRY.create(mode, options, b.get("name") or "", cpu_level)
     except RoomError as e:
         return _fail(e)
     if options is not None:
-        LAST_OPTIONS["value"] = dict(room.options)
-        _save_options(LAST_OPTIONS["value"])
+        for k in DEFAULT_OPTIONS:
+            LAST_OPTIONS["value"][k] = room.options[k]
+    if mode == "cpu":
+        LAST_OPTIONS["value"]["cpu_level"] = room.cpu_level
+    _save_options(LAST_OPTIONS["value"])
     return jsonify({
         "code": room.code,
         "token": room.tokens[0],
@@ -213,11 +226,20 @@ def api_room_rematch():
     if room.mode == "lan" and not room.is_full:
         return jsonify({"error": "相手がまだいません。"}), 400
     options = b.get("options")
+    changed = False
     if options is not None:
         for k in DEFAULT_OPTIONS:
             if k in options:
                 room.options[k] = bool(options[k])
-        LAST_OPTIONS["value"] = dict(room.options)
+                LAST_OPTIONS["value"][k] = room.options[k]
+        changed = True
+    if room.mode == "cpu":
+        cpu_level = b.get("cpu_level")
+        if cpu_level in CPU_LEVELS:
+            room.cpu_level = cpu_level
+            LAST_OPTIONS["value"]["cpu_level"] = cpu_level
+            changed = True
+    if changed:
         _save_options(LAST_OPTIONS["value"])
     room.start_game()
     return jsonify(room.view(seat))
@@ -257,7 +279,7 @@ def print_banner(host: str, port: int):
     name = socket.gethostname().lower()
     line = "=" * 62
     print(line)
-    print("  🎴 おぐそーのカードゲーム  サーバー起動")
+    print("  🎴 アルカナエクスプロージョン  サーバー起動")
     print(line)
     if host == "0.0.0.0":
         print("  📱 スマホ・ほかのPCから、このどれかを開いてね")

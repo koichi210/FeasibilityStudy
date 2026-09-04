@@ -136,6 +136,8 @@ def build_reference() -> dict:
             "hand_size_max": B["hand_size_max"],
             "attacks_before_retire": B["attacks_before_retire"],
             "rank_base_multiplier": B["rank_base_multiplier"],
+            "fatigue_turns": B["fatigue_turns"],
+            "item_draw_per_turn": B["item_draw_per_turn"],
         },
         "monster": {
             "suit_rules": _monster_suit_rules(),
@@ -143,7 +145,8 @@ def build_reference() -> dict:
             "numbers": group(monsters, NUMBER_RANKS),
             "demon": {
                 "hp": d["hp"], "atk": d["atk"], "def": d["def"], "turns": d["turns"],
-                "text": "♠A「魔王降臨」で登場。{}ターンで消滅し、魔王同士は攻撃できない".format(d["turns"]),
+                "text": "♠A「魔王降臨」で登場。バトル場にいる間{}ターンで消滅（ベンチにいる間は数えない）、"
+                        "魔王同士は攻撃できない".format(d["turns"]),
             },
         },
         "item": {

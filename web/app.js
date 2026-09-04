@@ -1,4 +1,4 @@
-/* おぐそーのカードゲーム — 画面ロジック
+/* アルカナエクスプロージョン — 画面ロジック
 
    サーバーから盤面(view)を受け取って描画するだけ。ルール判定は一切しない。
    「今できること」は view.actions に入って降ってくるので、それをUIに紐づける。
@@ -8,13 +8,27 @@
 
 const $ = (id) => document.getElementById(id);
 const RED_SUITS = new Set(["H", "D"]);
-const STORE_KEY = "cardgame.session";
+const STORE_KEY = "arcana.session";
+const NAME_KEY = "arcana.name";
 const POLL_MS = 1200;
+
+/* 保存キーの引っ越し（cardgame.* → arcana.*）。
+   フォルダ名を ArcanaExplosion にしたのに合わせて改名した。
+   すでに遊んでいた人の名前と、中断中の対戦をそのまま引き継ぐ。
+   みんなの移行が済んだら、このブロックは消してよい。 */
+[[STORE_KEY, "cardgame.session"], [NAME_KEY, "cardgame.name"]].forEach(([now, old]) => {
+  const v = localStorage.getItem(old);
+  if (v !== null && localStorage.getItem(now) === null) localStorage.setItem(now, v);
+  localStorage.removeItem(old);
+});
 
 let SESSION = null;   // {code, token, seat, mode}
 let RESUMABLE = null; // 「モード選択へ」で中断した対戦。あとから戻れるように保持する
 let STATE = null;     // サーバーから来た盤面
 let REF = null;       // カード図鑑（一度取ったら使い回す）
+let selectedMonsterHand = null;  // 選択中のモンスター手札のindex（null=未選択）
+let prevHp = {};      // uid -> 直前に描画したHP（ダメージ/回復の点滅判定用）
+let prevTrainerHp = { me: null, op: null };  // トレーナーHPの点滅判定用
 let lastRev = -1;
 let lostCount = 0;    // 「部屋が見つからない」が何回続いたか
 let pollTimer = null;
@@ -94,9 +108,11 @@ function playerName() {
   return v || "なまえなし";
 }
 
-async function createRoom(mode) {
+async function createRoom(mode, cpuLevel) {
   try {
-    const r = await api("/api/room/create", { mode: mode, name: mode === "lan" ? playerName() : "あなた" });
+    const body = { mode: mode, name: mode === "lan" ? playerName() : "あなた" };
+    if (mode === "cpu" && cpuLevel) body.cpu_level = cpuLevel;
+    const r = await api("/api/room/create", body);
     SESSION = { code: r.code, token: r.token, seat: r.seat, mode: mode };
     saveSession();
     if (mode === "cpu") {
@@ -155,6 +171,9 @@ function enterGame(view) {
   hideLobby();
   RESUMABLE = null;   // 新しい対戦に入ったので、中断していたものはもう戻れない
   STATE = view;
+  selectedMonsterHand = null;
+  prevHp = {};
+  prevTrainerHp = { me: null, op: null };
   lastRev = -1;
   render();
   if (SESSION && SESSION.mode === "lan") startPolling();
@@ -203,6 +222,7 @@ async function poll() {
 
 async function send(action) {
   if (busy || !SESSION) return;
+  selectedMonsterHand = null;
   busy = true;
   document.body.style.cursor = "progress";
   try {
@@ -217,11 +237,12 @@ async function send(action) {
   }
 }
 
-async function rematch(options) {
+async function rematch(options, cpuLevel) {
   if (!SESSION) return;
   try {
     const body = { code: SESSION.code, token: SESSION.token };
     if (options) body.options = options;
+    if (cpuLevel) body.cpu_level = cpuLevel;
     STATE = await api("/api/room/rematch", body);
     lastRev = -1;
     render();
@@ -274,8 +295,9 @@ function monsterCard(m, opts) {
   opts = opts || {};
   if (!m) {
     const e = document.createElement("div");
-    e.className = "slot-empty";
-    e.textContent = "空き";
+    e.className = "slot-empty" + (opts.onClick ? " placeable" : "");
+    e.textContent = opts.onClick ? "🃏 ここに配置" : "空き";
+    if (opts.onClick) e.addEventListener("click", opts.onClick);
     return e;
   }
   const el = document.createElement("div");
@@ -283,6 +305,7 @@ function monsterCard(m, opts) {
   if (RED_SUITS.has(m.suit)) el.classList.add("red");
   if (m.is_demon) el.classList.add("demon");
   if (m.fatigue > 0) el.classList.add("fatigued");
+  if (opts.flash) el.classList.add(opts.flash);
   if (opts.onClick) {
     el.classList.add("clickable");
     el.title = opts.title || "";
@@ -362,6 +385,48 @@ function itemCard(c, usable, onClick) {
     '<div class="item-text">' + escapeHtml(text) + "</div>";
   attachHover(el, itemZoom(c, usable));
   return el;
+}
+
+/* --------------------------------------- モンスター手札（配置前）の描画 */
+function monsterHandCard(c, i, selected, placeable) {
+  const el = document.createElement("div");
+  el.className = "mh-card" + (RED_SUITS.has(c.suit) ? " red" : "") +
+    (selected ? " selected" : "") + (placeable ? " placeable" : "");
+  el.innerHTML =
+    '<div class="mh-head"><span>' + c.mark + "</span><span>" + c.rank_label + "</span></div>" +
+    '<div class="mh-name">' + escapeHtml(c.name) + "</div>" +
+    '<div class="mh-stats"><span class="atk">⚔ ' + c.atk + "</span><span class=\"def\">🛡 " + c.dfn + "</span></div>" +
+    '<div class="mh-ability">' + (c.ability ? escapeHtml(c.ability.text) : "") + "</div>";
+  if (placeable) {
+    el.title = selected ? "クリックで選択解除" : "クリックで選択 → 空いている枠をクリックで配置";
+    el.addEventListener("click", () => {
+      selectedMonsterHand = selected ? null : i;
+      lastRev = -1;   // 選択状態はサーバー側の rev と無関係なので、強制的に描き直す
+      render();
+    });
+  }
+  attachHover(el, monsterHandZoom(c));
+  return el;
+}
+
+function monsterHandZoom(c) {
+  let h = '<div class="zp-head"><span class="zp-mark">' + c.mark + c.rank_label + "</span>" +
+            '<span class="zp-name">' + escapeHtml(c.name) + "</span></div>";
+  h += '<div class="zp-stats">⚔ 攻撃 <b>' + c.atk + "</b>　🛡 防御 <b>" + c.dfn + "</b></div>";
+  if (c.ability) {
+    h += '<div class="zp-abname">✨ ' + escapeHtml(c.ability.name) + "</div>";
+    h += '<div class="zp-abtext">' + escapeHtml(c.ability.text) + "</div>";
+  } else {
+    h += '<div class="zp-abtext zp-none">技なし</div>';
+  }
+  h += '<div class="zp-status">🃏 まだ場に出ていません。クリックして選び、空いている枠に配置してね</div>';
+  return h;
+}
+
+function placeSelected(slot) {
+  if (selectedMonsterHand == null) return;
+  const hand = selectedMonsterHand;
+  send({ type: "place", hand: hand, slot: slot });
 }
 
 function itemZoom(c, usable) {
@@ -461,7 +526,7 @@ function render() {
     tag.textContent = "🌐 LAN " + room.code;
     tag.classList.remove("hidden");
   } else {
-    tag.textContent = "🤖 CPU対戦";
+    tag.textContent = "🤖 CPU対戦" + (room.cpu_level_label ? "・" + room.cpu_level_label : "");
     tag.classList.remove("hidden");
   }
 
@@ -484,7 +549,8 @@ function render() {
   $("opHpText").textContent = op.trainer_hp + " / " + op.trainer_hp_max;
   $("opHpFill").style.width = pct(op.trainer_hp, op.trainer_hp_max);
   $("opCounts").textContent =
-    "🃏 山札 " + op.deck_count + "　🗑️ 捨札 " + op.discard_count + "　🎒 手札 " + op.hand_count + "枚";
+    "🃏 山札 " + op.deck_count + "　🗑️ 捨札 " + op.discard_count + "　🎒 手札 " + op.hand_count + "枚" +
+    (op.monster_hand_count ? "　🐣 配置前 " + op.monster_hand_count + "体" : "");
 
   $("myName").textContent = me.name;
   $("myHpText").textContent = me.trainer_hp + " / " + me.trainer_hp_max;
@@ -493,21 +559,55 @@ function render() {
     "🃏 山札 " + me.deck_count + "　🗑️ 捨札 " + me.discard_count +
     "　🎒 アイテム山 " + STATE.item_deck_count + "　" + optionSummary();
 
+  // トレーナーHPが増減したら、枠ごとパッと色づかせる
+  const opTrHp = prevTrainerHp.op;
+  pulse($("opTrainer"), opTrHp == null ? null : (op.trainer_hp < opTrHp ? "hit" : op.trainer_hp > opTrHp ? "heal" : null));
+  prevTrainerHp.op = op.trainer_hp;
+  const myTrHp = prevTrainerHp.me;
+  pulse($("myTrainer"), myTrHp == null ? null : (me.trainer_hp < myTrHp ? "hit" : me.trainer_hp > myTrHp ? "heal" : null));
+  prevTrainerHp.me = me.trainer_hp;
+
   // --- 場 ---
   fill($("opBattle"), [op.battle], { mine: false });
   fill($("opBench"), op.bench, { mine: false });
-  fill($("myBattle"), [me.battle], { mine: true });
+
+  // 選択中のモンスター手札が、この枠に置けるか（=サーバーがそのplaceを許可しているか）
+  const placesHere = (slot) => selectedMonsterHand != null &&
+    (byType.place || []).some((a) => a.hand === selectedMonsterHand && a.slot === slot);
+
+  const battleBox = $("myBattle");
+  battleBox.innerHTML = "";
+  battleBox.appendChild(monsterCard(me.battle, {
+    mine: true,
+    flash: flashClass(me.battle),
+    onClick: (!me.battle && placesHere("battle")) ? () => placeSelected("battle") : null,
+  }));
 
   const benchBox = $("myBench");
   benchBox.innerHTML = "";
   me.bench.forEach((m, i) => {
     const swap = (byType.swap || []).find((a) => a.bench === i);
+    const place = !m && placesHere(i);
     benchBox.appendChild(monsterCard(m, {
       mine: true,
-      onClick: swap ? () => send({ type: "swap", bench: i }) : null,
+      flash: flashClass(m),
+      onClick: swap ? () => send({ type: "swap", bench: i })
+               : place ? () => placeSelected(i) : null,
       actionLabel: "🔄 バトル場と交代する",
       title: swap ? "クリックでバトル場と交代" : "",
     }));
+  });
+
+  // --- モンスター手札（配置前） ---
+  // ※ サーバーを再起動しないまま画面だけ新しくなっていると monster_hand が
+  //   来ないことがある（起動しなおせば直る）ので、念のため空配列で受ける。
+  const monsterHand = me.monster_hand || [];
+  const mhBox = $("myMonsterHand");
+  mhBox.innerHTML = "";
+  if (!monsterHand.length) mhBox.innerHTML = '<div class="acthint">手札なし</div>';
+  monsterHand.forEach((c, i) => {
+    const canPlace = (byType.place || []).some((a) => a.hand === i);
+    mhBox.appendChild(monsterHandCard(c, i, selectedMonsterHand === i, canPlace));
   });
 
   // --- 手札 ---
@@ -567,6 +667,7 @@ function hintText(st, me, byType) {
       ? "相手の番です。待ってね…" : "CPUが考え中…";
   }
   const bits = [];
+  if ((byType.place || []).length) bits.push("🃏 配置できるモンスターがいます");
   if (me.battle && me.battle.fatigue > 0) bits.push("バトル場は疲労中（攻撃できない）");
   if (me.item_used) bits.push("アイテムは使用済み");
   if (me.swaps_left <= 0) bits.push("交代は使用済み");
@@ -578,11 +679,39 @@ function hintText(st, me, byType) {
 
 function fill(box, list, opts) {
   box.innerHTML = "";
-  list.forEach((m) => box.appendChild(monsterCard(m, opts)));
+  list.forEach((m) => {
+    const merged = Object.assign({}, opts, { flash: flashClass(m) });
+    box.appendChild(monsterCard(m, merged));
+  });
 }
 
 function pct(v, max) {
   return Math.max(0, Math.min(100, (v / max) * 100)) + "%";
+}
+
+/* ------------------------------------------------- ダメージ/回復の点滅 */
+// モンスターのHPを前回の描画と比べて、"hit"（減った）/"heal"（増えた）を返す。
+// 呼ぶたびに記録も更新するので、同じモンスターについて1回だけ呼ぶこと。
+function flashClass(m) {
+  if (!m) return null;
+  const prev = prevHp[m.uid];
+  let cls = null;
+  if (prev !== undefined) {
+    if (m.hp < prev) cls = "hit";
+    else if (m.hp > prev) cls = "heal";
+  }
+  prevHp[m.uid] = m.hp;
+  return cls;
+}
+
+// すでにDOMにある要素（トレーナー枠など）にアニメーションクラスを付け直す。
+// 同じクラス名を続けて付けても再生されないブラウザの仕様があるので、
+// 一度外してから（リフローを挟んで）付け直す。
+function pulse(el, cls) {
+  el.classList.remove("hit", "heal");
+  if (!cls) return;
+  void el.offsetWidth;   // 強制リフロー：これがないとアニメーションが再生されないことがある
+  el.classList.add(cls);
 }
 
 /* ======================================================= タブと図鑑 */
@@ -602,9 +731,11 @@ async function loadReference() {
   if (REF) return;
   try {
     REF = await api("/api/reference");
+    $("refRules").innerHTML = CardRef.rulesHtml(REF);
     $("refItem").innerHTML = CardRef.itemHtml(REF, false);
     $("refMonster").innerHTML = CardRef.monsterHtml(REF, false);
   } catch (e) {
+    $("refRules").innerHTML = '<div class="ref-note">読み込みに失敗しました: ' + e.message + "</div>";
     $("refItem").innerHTML = '<div class="ref-note">読み込みに失敗しました: ' + e.message + "</div>";
   }
 }
@@ -624,7 +755,7 @@ async function applyName() {
   try {
     STATE = await api("/api/room/rename",
       { code: SESSION.code, token: SESSION.token, name: name });
-    localStorage.setItem("cardgame.name", name);
+    localStorage.setItem(NAME_KEY, name);
     $("nameOverlay").classList.add("hidden");
     lastRev = -1;
     render();
@@ -632,11 +763,18 @@ async function applyName() {
 }
 
 /* ======================================================= オプション */
+let pendingLevel = "normal";   // オプション画面で選び中のCPUの強さ
+
 function openOptions() {
   const o = (STATE && STATE.options) || {};
   $("optAbilities").checked = !!o.monster_abilities;
   $("optDemon").checked = !!o.demon_lord;
   syncOptionLock();
+
+  const isCpu = !!(STATE && STATE.room && STATE.room.mode === "cpu");
+  $("optLevelBlock").classList.toggle("hidden", !isCpu);
+  if (isCpu) selectLevel((STATE.room.cpu_level) || "normal");
+
   $("optionOverlay").classList.remove("hidden");
 }
 
@@ -646,12 +784,20 @@ function syncOptionLock() {
   if (!on) $("optDemon").checked = false;
 }
 
+function selectLevel(level) {
+  pendingLevel = level;
+  document.querySelectorAll(".levelbtn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.level === level);
+  });
+}
+
 async function applyOptions() {
   $("optionOverlay").classList.add("hidden");
+  const isCpu = !!(STATE && STATE.room && STATE.room.mode === "cpu");
   await rematch({
     monster_abilities: $("optAbilities").checked,
     demon_lord: $("optAbilities").checked && $("optDemon").checked,
-  });
+  }, isCpu ? pendingLevel : null);
 }
 
 /* ============================================================== 起動 */
@@ -664,6 +810,9 @@ $("optionBtn").addEventListener("click", openOptions);
 $("optCancel").addEventListener("click", () => $("optionOverlay").classList.add("hidden"));
 $("optApply").addEventListener("click", applyOptions);
 $("optAbilities").addEventListener("change", syncOptionLock);
+document.querySelectorAll(".levelbtn").forEach((b) => {
+  b.addEventListener("click", () => selectLevel(b.dataset.level));
+});
 $("sheetClose").addEventListener("click", closeSheet);
 $("sheetAction").addEventListener("click", () => {
   const a = sheetAction;
@@ -674,18 +823,22 @@ $("cardSheet").addEventListener("click", (e) => {
   if (e.target === $("cardSheet")) closeSheet();   // 外側をタップで閉じる
 });
 
-$("btnCpu").addEventListener("click", () => createRoom("cpu"));
+$("btnCpu").addEventListener("click", () => showLobby("lb-cpulevel"));
+$("cpuLevelModes").addEventListener("click", (e) => {
+  const b = e.target.closest(".modecard");
+  if (b) createRoom("cpu", b.dataset.level);
+});
 $("btnLan").addEventListener("click", () => {
-  const saved = localStorage.getItem("cardgame.name");
+  const saved = localStorage.getItem(NAME_KEY);
   if (saved) $("playerName").value = saved;
   showLobby("lb-lan");
 });
 $("btnMakeRoom").addEventListener("click", () => {
-  localStorage.setItem("cardgame.name", playerName());
+  localStorage.setItem(NAME_KEY, playerName());
   createRoom("lan");
 });
 $("btnFindRoom").addEventListener("click", () => {
-  localStorage.setItem("cardgame.name", playerName());
+  localStorage.setItem(NAME_KEY, playerName());
   showLobby("lb-join");
 });
 $("btnJoinCode").addEventListener("click", () => {

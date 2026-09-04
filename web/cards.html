@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>カード図鑑 — おぐそーのカードゲーム</title>
+<title>カード図鑑 — アルカナエクスプロージョン</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="cardspage">
@@ -17,6 +17,11 @@
 <main class="cardsmain">
 
   <section class="cardsec">
+    <h2>📖 ゲームルール</h2>
+    <div class="refbody" id="refRules">読み込み中…</div>
+  </section>
+
+  <section class="cardsec">
     <h2>🎒 アイテムカード</h2>
     <p class="secnote">
       アイテムデッキは<b>両プレイヤーで共有の1箱</b>。毎ターン1枚引いて、<b>1ターンに1枚まで</b>使えます。
@@ -26,8 +31,8 @@
 
   <section class="cardsec">
     <h2>⚔️ モンスターカード</h2>
-    <p class="secnote">
-      自分のモンスターデッキ（52枚）から場に出ます。バトル場1枚＋ベンチ2枚。
+    <p class="secnote" id="monsterSecNote">
+      自分のモンスターデッキ（52枚）から場に出ます。
     </p>
     <div class="refbody" id="refMonster">読み込み中…</div>
   </section>
@@ -39,11 +44,16 @@
 fetch("/api/reference")
   .then((r) => r.json())
   .then((ref) => {
+    document.getElementById("refRules").innerHTML = CardRef.rulesHtml(ref);
     document.getElementById("refItem").innerHTML = CardRef.itemHtml(ref, true);
     document.getElementById("refMonster").innerHTML = CardRef.monsterHtml(ref, true);
+    document.getElementById("monsterSecNote").textContent =
+      "自分のモンスターデッキ（52枚）から場に出ます。バトル場1枚＋ベンチ" +
+      ref.constants.bench_size + "枚。";
   })
   .catch((e) => {
     const msg = '<div class="ref-note">読み込みに失敗しました。ゲームのサーバーが起動しているか確認してください。<br>' + e + "</div>";
+    document.getElementById("refRules").innerHTML = msg;
     document.getElementById("refItem").innerHTML = msg;
     document.getElementById("refMonster").innerHTML = "";
   });

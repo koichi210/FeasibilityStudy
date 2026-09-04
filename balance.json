@@ -6,7 +6,7 @@
   "min_damage": 10,
   "kill_trainer_damage": 30,
 
-  "bench_size": 2,
+  "bench_size": 3,
   "hand_size_max": 5,
   "item_draw_per_turn": 1,
   "initial_hand_size": 3,
@@ -73,8 +73,27 @@
     "S_A_self_damage": 50
   },
 
-  "ai": {
-    "swap_hp_threshold": 0.35,
-    "heal_hp_threshold": 0.6
+  "ai_levels": {
+    "easy": {
+      "mistake_rate": 0.35,
+      "item_threshold": 25,
+      "swap_hp_threshold": 0.5,
+      "heal_hp_threshold": 0.75,
+      "lethal_priority": false
+    },
+    "normal": {
+      "mistake_rate": 0.0,
+      "item_threshold": 15,
+      "swap_hp_threshold": 0.35,
+      "heal_hp_threshold": 0.6,
+      "lethal_priority": false
+    },
+    "hard": {
+      "mistake_rate": 0.0,
+      "item_threshold": 8,
+      "swap_hp_threshold": 0.3,
+      "heal_hp_threshold": 0.5,
+      "lethal_priority": true
+    }
   }
 }

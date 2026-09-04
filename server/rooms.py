@@ -21,7 +21,7 @@ import threading
 import time
 from typing import Dict, List, Optional
 
-from engine.ai import run_cpu_turn
+from engine.ai import CPU_LEVEL_LABELS, CPU_LEVELS, DEFAULT_CPU_LEVEL, run_cpu_turn
 from engine.game import DEFAULT_OPTIONS, Game
 
 # 紛らわしい文字（0/O、1/I/L）を除いた合言葉用の文字
@@ -53,10 +53,12 @@ class RoomError(Exception):
 
 
 class Room:
-    def __init__(self, code: str, mode: str, options: dict, host_name: str):
+    def __init__(self, code: str, mode: str, options: dict, host_name: str,
+                 cpu_level: str = DEFAULT_CPU_LEVEL):
         self.code = code
         self.mode = mode                      # "cpu" | "lan"
         self.options = dict(options)
+        self.cpu_level = cpu_level if cpu_level in CPU_LEVELS else DEFAULT_CPU_LEVEL
         self.names: List[Optional[str]] = [host_name, "CPU" if mode == "cpu" else None]
         self.tokens: List[Optional[str]] = [secrets.token_urlsafe(12), None]
         self.last_seen: List[float] = [time.time(), 0.0]
@@ -84,7 +86,7 @@ class Room:
         guard = 0
         while (self.game.winner is None
                and self.game.players[self.game.current].is_cpu and guard < 50):
-            run_cpu_turn(self.game)
+            run_cpu_turn(self.game, level=self.cpu_level)
             guard += 1
         self.rev += 1
 
@@ -166,6 +168,9 @@ class Room:
                 "names": [self.names[0], self.names[1]],
                 "waiting": not self.started,
                 "opponent_online": self.opponent_online(seat),
+                "cpu_level": self.cpu_level if self.mode == "cpu" else None,
+                "cpu_level_label": (CPU_LEVEL_LABELS.get(self.cpu_level)
+                                     if self.mode == "cpu" else None),
             },
             "rev": self.rev,
         }
@@ -231,7 +236,8 @@ class RoomRegistry:
         with self._lock:
             self._rooms.pop(room.code, None)
 
-    def create(self, mode: str, options: Optional[dict], host_name: str) -> Room:
+    def create(self, mode: str, options: Optional[dict], host_name: str,
+               cpu_level: Optional[str] = None) -> Room:
         with self._lock:
             self._cleanup()
             if len(self._rooms) >= MAX_ROOMS:
@@ -241,7 +247,9 @@ class RoomRegistry:
                 for k in DEFAULT_OPTIONS:
                     if k in options:
                         opts[k] = bool(options[k])
-            room = Room(self._new_code(), mode, opts, host_name or "プレイヤー1")
+            level = cpu_level if cpu_level in CPU_LEVELS else DEFAULT_CPU_LEVEL
+            room = Room(self._new_code(), mode, opts, host_name or "プレイヤー1",
+                        cpu_level=level)
             self._rooms[room.code] = room
             return room
 

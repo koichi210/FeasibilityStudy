@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>アルカナエクスプロージョン</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="title">🎴 アルカナエクスプロージョン</div>
+  <span id="roomTag" class="tag hidden"></span>
+  <div class="turninfo">
+    <span id="turnLabel">ターン -</span>
+    <span id="whoseTurn" class="badge">-</span>
+  </div>
+  <button id="optionBtn" class="btn btn-ghost">⚙️ オプション</button>
+  <button id="newGameBtn" class="btn btn-ghost">🔄 もう一度</button>
+  <button id="leaveBtn" class="btn btn-ghost">🚪 モード選択へ</button>
+</header>
+
+<main class="layout">
+
+  <section class="board">
+
+    <!-- ================= 相手 ================= -->
+    <div class="side side-opponent">
+      <div class="trainer" id="opTrainer">
+        <div class="trainer-head">
+          <span class="tname" id="opName">CPU</span>
+          <span class="thp" id="opHpText">200 / 200</span>
+        </div>
+        <div class="hpbar big"><div class="hpfill enemy" id="opHpFill"></div></div>
+        <div class="counts" id="opCounts"></div>
+      </div>
+
+      <div class="zone zone-bench">
+        <div class="zone-label">🛡️ ベンチ</div>
+        <div class="slots" id="opBench"></div>
+      </div>
+      <div class="zone zone-battle">
+        <div class="zone-label">🏟️ バトル場</div>
+        <div class="slots" id="opBattle"></div>
+      </div>
+    </div>
+
+    <div class="divider"><span>VS</span></div>
+
+    <!-- ================= 自分 ================= -->
+    <div class="side side-me">
+      <div class="zone zone-battle">
+        <div class="zone-label">🏟️ バトル場</div>
+        <div class="slots" id="myBattle"></div>
+      </div>
+      <div class="zone zone-bench">
+        <div class="zone-label">🛡️ ベンチ <span class="hint">（クリックで交代）</span></div>
+        <div class="slots" id="myBench"></div>
+      </div>
+
+      <div class="trainer" id="myTrainer">
+        <div class="trainer-head">
+          <button class="tname editable" id="myName" title="クリックで名前を変えられます">あなた</button>
+          <span class="thp" id="myHpText">200 / 200</span>
+        </div>
+        <div class="hpbar big"><div class="hpfill mine" id="myHpFill"></div></div>
+        <div class="counts" id="myCounts"></div>
+      </div>
+    </div>
+
+    <!-- ================= モンスター手札（配置前） ================= -->
+    <div class="hand-zone monsterhand-zone">
+      <div class="zone-label">🃏 モンスター手札
+        <span class="hint">（クリックで選ぶ → 空いている枠をクリックで配置）</span>
+      </div>
+      <div class="hand" id="myMonsterHand"></div>
+    </div>
+
+    <!-- ================= 手札 ================= -->
+    <div class="hand-zone">
+      <div class="zone-label">🎒 アイテム手札
+        <span class="hint">（クリックで使用・1ターン1枚／マウスを乗せると拡大🔍）</span>
+      </div>
+      <div class="hand" id="myHand"></div>
+    </div>
+
+    <div class="actionbar">
+      <button id="attackBtn" class="btn btn-attack" disabled>⚔️ 攻撃</button>
+      <button id="endTurnBtn" class="btn btn-end" disabled>⏭️ ターン終了</button>
+      <span class="acthint" id="actHint"></span>
+    </div>
+
+  </section>
+
+  <!-- ================= 右パネル（タブ切り替え） ================= -->
+  <aside class="sidepane">
+    <div class="tabs">
+      <button class="tab active" data-tab="log">📜 ログ</button>
+      <button class="tab" data-tab="rules">📖 ルール</button>
+      <button class="tab" data-tab="item">🎒 アイテム</button>
+      <button class="tab" data-tab="monster">⚔️ モンスター</button>
+    </div>
+
+    <div class="tabbody">
+      <div class="tabpanel active" id="panel-log">
+        <div class="loglist" id="logList"></div>
+      </div>
+      <div class="tabpanel" id="panel-rules">
+        <div class="refbody" id="refRules">読み込み中…</div>
+      </div>
+      <div class="tabpanel" id="panel-item">
+        <div class="refbody" id="refItem">読み込み中…</div>
+      </div>
+      <div class="tabpanel" id="panel-monster">
+        <div class="refbody" id="refMonster">読み込み中…</div>
+      </div>
+    </div>
+
+    <div class="paneFoot">
+      <a href="/cards" target="_blank" rel="noopener" class="poplink">
+        ↗ カード図鑑を別ウィンドウで開く（印刷もできる）
+      </a>
+    </div>
+  </aside>
+
+</main>
+
+<!-- ================= ロビー（モード選択・部屋） ================= -->
+<div id="lobby" class="overlay lobby">
+  <div class="lobbybox">
+
+    <!-- --- モード選択 --- -->
+    <div class="lobbyscreen active" id="lb-mode">
+      <div class="lobbytitle">🎴 アルカナエクスプロージョン</div>
+      <div class="lobbysub">遊びかたを選んでね</div>
+      <button id="btnResume" class="btn btn-attack resumebtn hidden">
+        ▶ 中断した対戦にもどる
+      </button>
+      <div class="resumenote hidden" id="resumeNote">
+        新しく選ぶと、いまの対戦は終わってしまいます
+      </div>
+      <div class="modes">
+        <button class="modecard" id="btnCpu">
+          <div class="modeicon">🤖</div>
+          <div class="modename">CPU対戦</div>
+          <div class="modedesc">ひとりで遊ぶ。<br>ルールを覚えるならこっち</div>
+        </button>
+        <button class="modecard" id="btnLan">
+          <div class="modeicon">🌐</div>
+          <div class="modename">LAN対戦</div>
+          <div class="modedesc">同じネットワークの人と対戦。<br>相手に手札は見えません</div>
+        </button>
+      </div>
+      <div class="lobbyfoot">
+        <a href="/cards" target="_blank" rel="noopener" class="poplink">↗ カード図鑑を見る</a>
+      </div>
+    </div>
+
+    <!-- --- CPU対戦：強さ選択 --- -->
+    <div class="lobbyscreen" id="lb-cpulevel">
+      <div class="lobbytitle">🤖 CPU対戦</div>
+      <div class="lobbysub">CPUの強さを選んでね</div>
+      <div class="modes" id="cpuLevelModes">
+        <button class="modecard" data-level="easy">
+          <div class="modeicon">🐣</div>
+          <div class="modename">初級</div>
+          <div class="modedesc">はじめての人向け。<br>のんびり遊べる強さ</div>
+        </button>
+        <button class="modecard" data-level="normal">
+          <div class="modeicon">⚔️</div>
+          <div class="modename">中級</div>
+          <div class="modedesc">標準の強さ。<br>これまで通りのCPU</div>
+        </button>
+        <button class="modecard" data-level="hard">
+          <div class="modeicon">🔥</div>
+          <div class="modename">上級</div>
+          <div class="modedesc">手加減なし。<br>倒せるときは逃さない</div>
+        </button>
+      </div>
+      <div class="lobbyfoot"><button class="btn btn-end" data-back="lb-mode">← もどる</button></div>
+    </div>
+
+    <!-- --- LANメニュー --- -->
+    <div class="lobbyscreen" id="lb-lan">
+      <div class="lobbytitle">🌐 LAN対戦</div>
+      <label class="namerow">
+        <span>あなたの名前</span>
+        <input type="text" id="playerName" maxlength="12" placeholder="なまえ">
+      </label>
+      <div class="modes">
+        <button class="modecard" id="btnMakeRoom">
+          <div class="modeicon">🏠</div>
+          <div class="modename">部屋を作る</div>
+          <div class="modedesc">合言葉が出るので<br>相手に伝えてね</div>
+        </button>
+        <button class="modecard" id="btnFindRoom">
+          <div class="modeicon">🔎</div>
+          <div class="modename">部屋に入る</div>
+          <div class="modedesc">相手が作った部屋に<br>参加する</div>
+        </button>
+      </div>
+      <div class="lobbyfoot"><button class="btn btn-end" data-back="lb-mode">← もどる</button></div>
+    </div>
+
+    <!-- --- 部屋を作る（待機） --- -->
+    <div class="lobbyscreen" id="lb-wait">
+      <div class="lobbytitle">🏠 相手を待っています…</div>
+      <div class="lobbysub">この合言葉を相手に伝えてね</div>
+      <div class="roomcode" id="roomCode">----</div>
+      <div class="waitnote">
+        相手は「LAN対戦 → 部屋に入る」から、この合言葉の部屋を選びます。<br>
+        同じネットワークにいれば、一覧にも自動で出ます。
+      </div>
+      <div class="spinner">⏳ 待機中…</div>
+      <div class="lobbyfoot"><button class="btn btn-end" data-back="lb-lan">← やめる</button></div>
+    </div>
+
+    <!-- --- 部屋に入る --- -->
+    <div class="lobbyscreen" id="lb-join">
+      <div class="lobbytitle">🔎 部屋に入る</div>
+      <div class="lobbysub">開いている部屋</div>
+      <div class="roomlist" id="roomList">さがしています…</div>
+      <div class="joinmanual">
+        <span>合言葉を直接入力：</span>
+        <input type="text" id="joinCode" maxlength="4" placeholder="ABCD">
+        <button class="btn btn-attack" id="btnJoinCode">入る</button>
+      </div>
+      <div class="lobbyfoot"><button class="btn btn-end" data-back="lb-lan">← もどる</button></div>
+    </div>
+
+    <div class="lobbyerr hidden" id="lobbyErr"></div>
+  </div>
+</div>
+
+<!-- ================= 名前の変更 ================= -->
+<div id="nameOverlay" class="overlay hidden">
+  <div class="overlay-box namebox">
+    <div class="overlay-title">📝</div>
+    <div class="overlay-text">名前を変える</div>
+    <input type="text" id="newName" maxlength="12" placeholder="なまえ">
+    <div class="optnote">対戦中でも変えられます。相手の画面にもすぐ反映されます。</div>
+    <div class="optbtns">
+      <button id="nameApply" class="btn btn-attack">変更する</button>
+      <button id="nameCancel" class="btn btn-end">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== マウスを乗せたときの拡大表示（PC用・画面の一番上に置く） ===== -->
+<div id="hoverPop" class="hoverpop hidden"></div>
+
+<!-- ========== カード詳細シート（スマホ用・タップで開く） ========== -->
+<div id="cardSheet" class="sheet hidden">
+  <div class="sheetbox">
+    <div class="sheetbody" id="sheetBody"></div>
+    <div class="sheetbtns">
+      <button id="sheetAction" class="btn btn-attack hidden"></button>
+      <button id="sheetClose" class="btn btn-end">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 相手待ち／切断のお知らせ ================= -->
+<div id="pauseBanner" class="pausebanner hidden"></div>
+
+<!-- ================= オプション ================= -->
+<div id="optionOverlay" class="overlay hidden">
+  <div class="overlay-box optbox">
+    <div class="overlay-title">⚙️</div>
+    <div class="overlay-text">ゲームオプション</div>
+
+    <label class="optrow">
+      <input type="checkbox" id="optAbilities">
+      <span class="optlabel">⚔️ モンスターの技を使う</span>
+      <span class="optdesc">
+        オフにすると、J・Q・K・A の特殊能力が発動しなくなります。<br>
+        ルールがシンプルになるので、はじめての人におすすめ。
+      </span>
+    </label>
+
+    <label class="optrow">
+      <input type="checkbox" id="optDemon">
+      <span class="optlabel">👹 魔王（♠A）を使う</span>
+      <span class="optdesc">
+        オフにすると、♠A を出しても魔王が降臨しなくなります。<br>
+        ※「モンスターの技」がオフのときは、こちらもオフになります。
+      </span>
+    </label>
+
+    <div class="optlevelblock hidden" id="optLevelBlock">
+      <div class="optlabel">🤖 CPUの強さ</div>
+      <div class="optlevels" id="optLevels">
+        <button type="button" class="levelbtn" data-level="easy">🐣 初級</button>
+        <button type="button" class="levelbtn" data-level="normal">⚔️ 中級</button>
+        <button type="button" class="levelbtn" data-level="hard">🔥 上級</button>
+      </div>
+      <div class="optdesc">CPU対戦のときだけ有効です（LAN対戦では使いません）。</div>
+    </div>
+
+    <div class="optnote">
+      設定を変えると<b>新しいゲームが始まります</b>（いまの試合は終了します）。
+    </div>
+
+    <div class="optbtns">
+      <button id="optApply" class="btn btn-attack">この設定で始める</button>
+      <button id="optCancel" class="btn btn-end">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 決着 ================= -->
+<div id="overlay" class="overlay hidden">
+  <div class="overlay-box">
+    <div class="overlay-title" id="ovTitle">🏆</div>
+    <div class="overlay-text" id="ovText"></div>
+    <button id="ovBtn" class="btn btn-attack">🔄 もう一度あそぶ</button>
+  </div>
+</div>
+
+<script src="/static/reference.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

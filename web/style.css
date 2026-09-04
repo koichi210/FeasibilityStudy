@@ -139,31 +139,108 @@ body {
   transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
 }
 /* カードは毎回作り直す方式なので、出てくるたびに軽く動かすと
-   「パッと切り替わる」感じが和らぐ。地味だが効果は大きい。 */
+   「パッと切り替わる」感じが和らぐ。地味だが効果は大きい。
+
+   ⚠️ モンスターのカード（.card / .mh-card）にはここで animation を付けない。
+   app.js の FLIP 演出が transform を使って動かすので、常時アニメが乗っていると
+   打ち消し合って移動が見えなくなる。あちらは card-appear を必要なときだけ付ける。 */
 @keyframes cardIn {
   from { opacity: 0; transform: translateY(8px) scale(.94); }
   to   { opacity: 1; transform: none; }
 }
-.card, .item-card, .mh-card { animation: cardIn .6s ease-out; }
+.item-card { animation: cardIn .6s ease-out; }
+
+/* ------------------------------------------------- カードの動き（FLIP演出） */
+/* 新しく場に出たカード：ふわっと浮かび上がる */
+@keyframes cardAppear {
+  from { opacity: 0; transform: translateY(-14px) scale(.82); }
+  60%  { opacity: 1; }
+  to   { opacity: 1; transform: none; }
+}
+.card-appear { animation: cardAppear .85s cubic-bezier(.2,.7,.3,1.15); }
+
+/* ------------------------------------------- 攻撃モーションと被弾の爪痕 */
+/* 攻撃した側：踏み込んで斬りかかるように、2秒かけて何度も身構える */
+@keyframes attackShake {
+  0%   { transform: none; }
+  8%   { transform: translate(-7px, 2px) rotate(-4deg); }
+  16%  { transform: translate(9px, -3px) rotate(5deg); }
+  24%  { transform: translate(-5px, 1px) rotate(-3deg); }
+  32%  { transform: translate(6px, -2px) rotate(3deg); }
+  42%  { transform: translate(-3px, 0) rotate(-2deg); }
+  52%  { transform: translate(4px, -1px) rotate(2deg); }
+  64%  { transform: translate(-2px, 0) rotate(-1deg); }
+  78%  { transform: translate(2px, 0) rotate(1deg); }
+  100% { transform: none; }
+}
+.card.attacking {
+  animation: attackShake 2s ease-in-out;
+  z-index: 25;
+  box-shadow: 0 0 16px rgba(242,193,78,.75), 0 6px 14px rgba(0,0,0,.45);
+}
+
+/* 殴られた側：カードの真ん中に爪痕（×）が走る */
+.claw {
+  position: absolute; inset: 0; overflow: hidden;
+  border-radius: 10px; pointer-events: none;
+}
+.claw::before, .claw::after {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 5px; height: 150%; margin-left: -2.5px; margin-top: -75%;
+  border-radius: 3px;
+  background: linear-gradient(180deg,
+    rgba(255,90,80,0) 0%, rgba(255,70,60,.95) 22%,
+    rgba(255,190,180,1) 50%, rgba(255,70,60,.95) 78%, rgba(255,90,80,0) 100%);
+  box-shadow: 0 0 12px rgba(255,60,50,.95);
+}
+.claw::before { animation: clawSlashA 1.5s ease-out forwards; }
+.claw::after  { animation: clawSlashB 1.5s ease-out .14s backwards; }
+
+@keyframes clawSlashA {
+  0%   { opacity: 0; transform: rotate(34deg) scaleY(0); }
+  14%  { opacity: 1; transform: rotate(34deg) scaleY(1); }
+  62%  { opacity: 1; transform: rotate(34deg) scaleY(1); }
+  100% { opacity: 0; transform: rotate(34deg) scaleY(1); }
+}
+@keyframes clawSlashB {
+  0%   { opacity: 0; transform: rotate(-34deg) scaleY(0); }
+  14%  { opacity: 1; transform: rotate(-34deg) scaleY(1); }
+  62%  { opacity: 1; transform: rotate(-34deg) scaleY(1); }
+  100% { opacity: 0; transform: rotate(-34deg) scaleY(1); }
+}
+
+/* 退場したカードの抜け殻。元の場所に置き去りにして2秒かけて薄れさせる */
+#ghostLayer {
+  position: fixed; inset: 0; pointer-events: none; z-index: 60;
+}
+.card-ghost {
+  position: fixed; margin: 0; animation: none;
+  transition: opacity 2s ease-in, transform 2s ease-in, filter 2s ease-in;
+}
+.card-ghost.fading {
+  opacity: 0;
+  transform: translateY(18px) scale(.82) rotate(-4deg);
+  filter: grayscale(1) blur(2px);
+}
 
 /* ダメージ／回復のフラッシュ。カードは毎回新規要素なので、
    アニメーションクラスを最初から付けておくだけで自動的に1回再生される。
    揺れ自体は最初の一瞬だけ、そのあとの光りがゆっくり2秒かけて消える。 */
+/* transform は FLIP の移動演出が使うので、ここでは box-shadow だけで光らせる。
+   両方が transform を触ると、移動が途中で飛んでしまう。 */
 @keyframes hitFlash {
-  0%   { box-shadow: 0 0 0 0 rgba(224,90,85,.85); transform: none; }
-  6%   { box-shadow: 0 0 0 7px rgba(224,90,85,.5); transform: translateX(-4px); }
-  12%  { transform: translateX(3px); }
-  18%  { transform: none; }
+  0%   { box-shadow: 0 0 0 0 rgba(224,90,85,.85); }
+  6%   { box-shadow: 0 0 0 7px rgba(224,90,85,.5); }
   100% { box-shadow: 0 0 0 0 rgba(224,90,85,0); }
 }
-.card.hit { animation: cardIn .6s ease-out, hitFlash 2s ease-out; }
+.card.hit { animation: hitFlash 2s ease-out; }
 
 @keyframes healFlash {
   0%   { box-shadow: 0 0 0 0 rgba(79,208,138,.85); }
   15%  { box-shadow: 0 0 0 7px rgba(79,208,138,.5); }
   100% { box-shadow: 0 0 0 0 rgba(79,208,138,0); }
 }
-.card.heal { animation: cardIn .6s ease-out, healFlash 2s ease-out; }
+.card.heal { animation: healFlash 2s ease-out; }
 
 .card.red   { color: #b3211d; }
 .card.demon {

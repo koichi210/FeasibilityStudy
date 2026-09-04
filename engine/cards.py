@@ -71,6 +71,7 @@ class ItemEffect:
     value: int
     text: str
     extra: int = 0
+    cry: str = ""   # 使用時に叫ぶ口上。ログに出る（演出専用、ルールには影響しない）
 
 
 @dataclass
@@ -212,37 +213,73 @@ IV = BALANCE["item_values"]
 
 ITEM_FACE: Dict[str, ItemEffect] = {
     # ♥ 回復
-    "HJ": ItemEffect("heal", IV["H_J_heal"], "応急処置：バトル場のHPを{}回復".format(IV["H_J_heal"])),
+    "HJ": ItemEffect("heal", IV["H_J_heal"], "応急処置：バトル場のHPを{}回復".format(IV["H_J_heal"]),
+                     cry="まだ倒れるな、立ち上がれ！"),
     "HQ": ItemEffect("trainer_heal", IV["H_Q_trainer_heal"],
-                     "女神の祝福：トレーナーHPを{}回復".format(IV["H_Q_trainer_heal"])),
-    "HK": ItemEffect("full_heal", 0, "完全回復：バトル場のHPを全回復"),
-    "HA": ItemEffect("revive", 0, "蘇生の秘薬：捨て札のモンスター1体をベンチに戻す"),
+                     "女神の祝福：トレーナーHPを{}回復".format(IV["H_Q_trainer_heal"]),
+                     cry="女神よ、我にその加護を！"),
+    "HK": ItemEffect("full_heal", 0, "完全回復：バトル場のHPを全回復",
+                     cry="甦れ、我が魂の器よ！"),
+    "HA": ItemEffect("revive", 0, "蘇生の秘薬：捨て札のモンスター1体をベンチに戻す",
+                     cry="死者の眠りを破れ、いま一度この地に還れ！"),
     # ♦ 武器
-    "DJ": ItemEffect("weapon", IV["D_J_weapon"], "鋭い刃：攻撃+{}（装備）".format(IV["D_J_weapon"])),
+    "DJ": ItemEffect("weapon", IV["D_J_weapon"], "鋭い刃：攻撃+{}（装備）".format(IV["D_J_weapon"]),
+                     cry="研ぎ澄まされし刃よ、我が手に来たれ！"),
     "DQ": ItemEffect("weapon_cursed", IV["D_Q_weapon"],
                      "魔剣：攻撃+{} / 毎ターン自分に{}ダメージ".format(IV["D_Q_weapon"], IV["D_Q_curse"]),
-                     extra=IV["D_Q_curse"]),
+                     extra=IV["D_Q_curse"],
+                     cry="我が血を喰らえ、呪われし魔剣よ！"),
     "DK": ItemEffect("weapon_fragile", IV["D_K_weapon"],
-                     "伝説の剣：攻撃+{}。1回攻撃すると壊れる".format(IV["D_K_weapon"])),
-    "DA": ItemEffect("burn", IV["D_A_burn"], "極大魔法：相手バトル場に{}ダメージ".format(IV["D_A_burn"])),
+                     "伝説の剣：攻撃+{}。1回攻撃すると壊れる".format(IV["D_K_weapon"]),
+                     cry="伝説よ、いま一度この手に宿れ！"),
+    "DA": ItemEffect("burn", IV["D_A_burn"], "極大魔法：相手バトル場に{}ダメージ".format(IV["D_A_burn"]),
+                     cry="灰も残さず消え去れ、極大消滅呪文！"),
     # ♣ 戦術
-    "CJ": ItemEffect("cure_fatigue", 0, "気付け薬：疲労を回復して今すぐ攻撃できる"),
-    "CQ": ItemEffect("free_swap", 0, "入れ替え：交代権を消費せずに交代する"),
-    "CK": ItemEffect("deploy", 0, "号令：デッキからベンチにモンスターを1体追加展開"),
-    "CA": ItemEffect("draw_items", IV["C_A_draw"], "賢者の杖：アイテムを{}枚引く".format(IV["C_A_draw"])),
+    "CJ": ItemEffect("cure_fatigue", 0, "気付け薬：疲労を回復して今すぐ攻撃できる",
+                     cry="目を覚ませ、戦いはこれからだ！"),
+    "CQ": ItemEffect("free_swap", 0, "入れ替え：交代権を消費せずに交代する",
+                     cry="陣を組み替えよ、疾く走れ！"),
+    "CK": ItemEffect("deploy", 0, "号令：デッキからベンチにモンスターを1体追加展開",
+                     cry="集え、我が眷属たちよ！"),
+    "CA": ItemEffect("draw_items", IV["C_A_draw"], "賢者の杖：アイテムを{}枚引く".format(IV["C_A_draw"]),
+                     cry="叡智よ、我に至る道を示せ！"),
     # ♠ 禁断
     "SJ": ItemEffect("poison", IV["S_J_poison"],
-                     "毒の刃：相手バトル場に毒（毎ターン{}ダメージ）".format(IV["S_J_poison"])),
-    "SQ": ItemEffect("stun", 0, "呪縛：相手は次のターン攻撃できない"),
+                     "毒の刃：相手バトル場に毒（毎ターン{}ダメージ）".format(IV["S_J_poison"]),
+                     cry="蝕め、蒼き猛毒よ！"),
+    "SQ": ItemEffect("stun", 0, "呪縛：相手は次のターン攻撃できない",
+                     cry="動くな、闇の鎖に囚われよ！"),
     "SK": ItemEffect("sacrifice", IV["S_K_sacrifice"],
                      "生贄の儀式：自分のバトル場を退場させ、相手トレーナーに{}ダメージ".format(
-                         IV["S_K_sacrifice"])),
+                         IV["S_K_sacrifice"]),
+                     cry="その命、我が勝利の糧となれ！"),
     "SA": ItemEffect("forbidden", IV["S_A_self_damage"],
                      "禁断の契約：自分のトレーナーHP-{} / 相手バトル場を即退場".format(
-                         IV["S_A_self_damage"])),
+                         IV["S_A_self_damage"]),
+                     cry="代償は我が魂、禁忌の扉よ開け！"),
 }
 
-ITEM_NUMBER_NAMES = {"H": "薬草", "D": "武器", "C": "防具", "S": "呪符"}
+# 数字カード（2〜10）の名前。数字が上がるほど大仰になるように並べてある。
+# 効果はスートごとに固定（♥回復 / ♦武器 / ♣防具 / ♠呪符）で、
+# 数字が強さなので、名前もその順で格を上げていく。
+ITEM_NUMBER_NAMES: Dict[str, List[str]] = {
+    "H": ["蒼天の雫", "翠玉の霊薬", "月光の癒歌", "聖泉のしずく", "白銀の秘薬",
+          "生命樹の雫", "星霜の霊薬", "天恵の聖水", "楽園の甘露"],
+    "D": ["鉄爪の刃", "蒼焔の短剣", "双牙の剣", "疾風の刃", "猛火の戦斧",
+          "雷鳴の長剣", "竜牙の大剣", "業火の魔刀", "天穿つ聖剣"],
+    "C": ["鉄壁の胸当て", "樫盾の加護", "蒼鋼の鎧", "不動の城壁", "精霊銀の鎧",
+          "龍鱗の護り", "神鉄の大盾", "絶対障壁", "天上の聖鎧"],
+    "S": ["灼熱の呪符", "黒炎の呪印", "破滅の呪符", "冥界の呪詛", "煉獄の焔符",
+          "深淵の呪印", "滅魔の呪符", "終焉の呪言", "天罰の裁き符"],
+}
+
+# 数字カードの口上。名前を差し込んで叫ぶ。
+ITEM_NUMBER_CRIES = {
+    "H": "{}よ、我が同胞を癒せ！",
+    "D": "{}よ、我が敵を斬り裂け！",
+    "C": "{}よ、我が身を守り抜け！",
+    "S": "{}よ、彼の者に災いあれ！",
+}
 
 
 def make_item(suit: str, rank: int) -> Card:
@@ -253,23 +290,24 @@ def make_item(suit: str, rank: int) -> Card:
         return Card(suit=suit, rank=rank, kind="item", name=name, effect=eff)
 
     n = rank
+    name = ITEM_NUMBER_NAMES[suit][rank - 2]
+    cry = ITEM_NUMBER_CRIES[suit].format(name)
     if suit == "H":
         v = n * IV["heal_per_rank"]
-        eff = ItemEffect("heal", v, "薬草：バトル場のHPを{}回復".format(v))
+        eff = ItemEffect("heal", v, "{}：バトル場のHPを{}回復".format(name, v), cry=cry)
     elif suit == "D":
         v = n * IV["weapon_per_rank"]
-        eff = ItemEffect("weapon", v, "武器：攻撃+{}（装備）".format(v))
+        eff = ItemEffect("weapon", v, "{}：攻撃+{}（装備）".format(name, v), cry=cry)
     elif suit == "C":
         v = n * IV["armor_per_rank"]
-        eff = ItemEffect("armor", v, "防具：防御+{}（装備）".format(v))
+        eff = ItemEffect("armor", v, "{}：防御+{}（装備）".format(name, v), cry=cry)
     else:  # S
         v = n * IV["burn_per_rank"]
         rec = n * IV["burn_recoil_per_rank"]
         eff = ItemEffect("burn", v,
-                         "呪符：相手バトル場に{}ダメージ / 自分にも{}ダメージ".format(v, rec),
-                         extra=rec)
-    return Card(suit=suit, rank=rank, kind="item",
-                name="{}{}".format(ITEM_NUMBER_NAMES[suit], rank_label(rank)), effect=eff)
+                         "{}：相手バトル場に{}ダメージ / 自分にも{}ダメージ".format(name, v, rec),
+                         extra=rec, cry=cry)
+    return Card(suit=suit, rank=rank, kind="item", name=name, effect=eff)
 
 
 def build_item_deck() -> List[Card]:

@@ -301,16 +301,18 @@ function statWithBuff(v, buff) {
 function monsterCard(m, opts) {
   opts = opts || {};
   if (!m) {
+    // 配置先は手札クリック時に自動で決まるので、空き枠は押せない
     const e = document.createElement("div");
-    e.className = "slot-empty" + (opts.onClick ? " placeable" : "");
-    e.textContent = opts.onClick ? "🃏 ここに配置" : "空き";
-    if (opts.onClick) e.addEventListener("click", opts.onClick);
+    e.className = "slot-empty";
+    e.textContent = "空き";
     return e;
   }
   if (m.hidden) {
     // 相手のベンチ：いる事は分かるが中身（名前・技・HP）は伏せ札。
     const e = document.createElement("div");
     e.className = "card hidden-card";
+    // 中身が分からないので、場所そのものを目印にして動きを追う
+    if (opts.trackKey) e.dataset.cardkey = opts.trackKey;
     e.title = "相手のベンチ（中身は非公開）";
     e.innerHTML =
       '<div class="card-top"><span class="mark">🂠</span><span class="rank">？</span></div>' +
@@ -323,11 +325,20 @@ function monsterCard(m, opts) {
   }
   const el = document.createElement("div");
   el.className = "card";
+  // uid はモンスターが場にいる間ずっと変わらないので、
+  // 「ベンチ→バトル場」のように枠をまたいでも同じカードだと追跡できる。
+  el.dataset.cardkey = "m" + m.uid;
+  el.dataset.cardcode = m.code || "";
   if (RED_SUITS.has(m.suit)) el.classList.add("red");
   if (m.is_demon) el.classList.add("demon");
   if (m.fatigue > 0) el.classList.add("fatigued");
   if (opts.done) el.classList.add("done");
   if (opts.flash) el.classList.add(opts.flash);
+  // 攻撃した本人は身構えて揺れる／殴られた側には爪痕を走らせる
+  if (fxIsNew() && STATE.fx) {
+    if (STATE.fx.attacker === m.uid) el.classList.add("attacking");
+    if (STATE.fx.target === m.uid) el.classList.add("clawed");
+  }
   if (opts.onClick) {
     el.classList.add("clickable");
     el.title = opts.title || "";
@@ -365,7 +376,9 @@ function monsterCard(m, opts) {
       '" style="width:' + hpRate * 100 + '%"></div></div>' +
     '<div class="hptext">' + m.hp + " / " + m.hp_max + "</div>" +
     '<div class="badges">' + badges.join("") + "</div>" +
-    '<div class="ability">' + (m.ability ? escapeHtml(m.ability.text) : "") + "</div>";
+    '<div class="ability">' + (m.ability ? escapeHtml(m.ability.text) : "") + "</div>" +
+    // 被弾の爪痕。クラスが付いているときだけCSSで見えるようにしてある
+    (el.classList.contains("clawed") ? '<div class="claw"></div>' : "");
   attachHover(el, monsterZoom(m));
   return el;
 }
@@ -423,18 +436,18 @@ function monsterHandCard(c, i, selected, placeable) {
   const el = document.createElement("div");
   el.className = "mh-card" + (RED_SUITS.has(c.suit) ? " red" : "") +
     (selected ? " selected" : "") + (placeable ? " placeable" : "");
+  // 手札のカードには uid がまだ無いので、コード（♦Q など）で場のカードと結びつける。
+  // これで「手札 → ベンチ」の移動も動いて見せられる。
+  el.dataset.cardkey = "h" + c.code + "#" + i;
+  el.dataset.cardcode = c.code;
   el.innerHTML =
     '<div class="mh-head"><span>' + c.mark + "</span><span>" + c.rank_label + "</span></div>" +
     '<div class="mh-name">' + escapeHtml(c.name) + "</div>" +
     '<div class="mh-stats"><span class="atk">⚔ ' + c.atk + "</span><span class=\"def\">🛡 " + c.dfn + "</span></div>" +
     '<div class="mh-ability">' + (c.ability ? escapeHtml(c.ability.text) : "") + "</div>";
   if (placeable) {
-    el.title = selected ? "クリックで選択解除" : "クリックで選択 → 空いている枠をクリックで配置";
-    el.addEventListener("click", () => {
-      selectedMonsterHand = selected ? null : i;
-      lastRev = -1;   // 選択状態はサーバー側の rev と無関係なので、強制的に描き直す
-      render();
-    });
+    el.title = "クリックで場に出す（バトル場が空ならそこへ、あとはベンチに左から詰めて置く）";
+    el.addEventListener("click", () => placeAuto(i));
   }
   attachHover(el, monsterHandZoom(c));
   return el;
@@ -450,14 +463,21 @@ function monsterHandZoom(c) {
   } else {
     h += '<div class="zp-abtext zp-none">技なし</div>';
   }
-  h += '<div class="zp-status">🃏 まだ場に出ていません。クリックして選び、空いている枠に配置してね</div>';
+  h += '<div class="zp-status">🃏 まだ場に出ていません。クリックするとそのまま場に出ます</div>';
   return h;
 }
 
-function placeSelected(slot) {
-  if (selectedMonsterHand == null) return;
-  const hand = selectedMonsterHand;
-  send({ type: "place", hand: hand, slot: slot });
+/* 置き場所は選ばせず、クリックだけで場に出す。
+   バトル場が空ならそこを最優先（空のままだと直接攻撃されるため）、
+   埋まっていればベンチの左から順に詰めていく。 */
+function placeAuto(hand) {
+  const spots = (STATE.actions || []).filter((a) => a.type === "place" && a.hand === hand);
+  if (!spots.length) return;
+  const battle = spots.find((a) => a.slot === "battle");
+  const target = battle || spots
+    .filter((a) => typeof a.slot === "number")
+    .sort((a, b) => a.slot - b.slot)[0];
+  if (target) send({ type: "place", hand: hand, slot: target.slot });
 }
 
 function itemZoom(c, usable) {
@@ -575,6 +595,13 @@ function render() {
   // カードを作り直すので、出しっぱなしの吹き出しは消しておく
   hideHoverPop();
 
+  // 描き直す前に、いまカードがどこにあったかを控えておく。
+  // 描き直したあとの位置と見比べて「動いた／出た／消えた」を演出する。
+  const cardsBefore = snapshotCards();
+
+  // この描き直しで攻撃モーションを再生してよいかを決める（1回の攻撃につき1回だけ）
+  beginFxFrame();
+
   // --- トレーナー ---
   $("opName").textContent = op.name;
   $("opHpText").textContent = op.trainer_hp + " / " + op.trainer_hp_max;
@@ -600,36 +627,31 @@ function render() {
 
   // --- 場 ---
   fill($("opBattle"), [op.battle], { mine: false });
-  fill($("opBench"), op.bench, { mine: false });
-
-  // 選択中のモンスター手札が、この枠に置けるか（=サーバーがそのplaceを許可しているか）
-  const placesHere = (slot) => selectedMonsterHand != null &&
-    (byType.place || []).some((a) => a.hand === selectedMonsterHand && a.slot === slot);
+  // 相手ベンチは伏せ札で中身が分からないので、枠の位置を目印に動きを追う
+  fill($("opBench"), op.bench, { mine: false, trackPrefix: "opbench" });
 
   // 攻撃 or 交代のどちらかを使い終えたら、バトル場・ベンチのカードを
   // アイテム手札の「使えない」表示と同じ薄暗さにして、行動済みだと一目で分かるようにする。
   const fieldSpent = !!me.attacked || me.swaps_left <= 0;
 
+  // 配置は手札をクリックした時点で自動的に決まるので、空き枠は押せない飾り。
   const battleBox = $("myBattle");
   battleBox.innerHTML = "";
   battleBox.appendChild(monsterCard(me.battle, {
     mine: true,
     flash: flashClass(me.battle),
     done: fieldSpent,
-    onClick: (!me.battle && placesHere("battle")) ? () => placeSelected("battle") : null,
   }));
 
   const benchBox = $("myBench");
   benchBox.innerHTML = "";
   me.bench.forEach((m, i) => {
     const swap = (byType.swap || []).find((a) => a.bench === i);
-    const place = !m && placesHere(i);
     benchBox.appendChild(monsterCard(m, {
       mine: true,
       flash: flashClass(m),
       done: fieldSpent,
-      onClick: swap ? () => send({ type: "swap", bench: i })
-               : place ? () => placeSelected(i) : null,
+      onClick: swap ? () => send({ type: "swap", bench: i }) : null,
       actionLabel: "🔄 バトル場と交代する",
       title: swap ? "クリックでバトル場と交代" : "",
     }));
@@ -644,7 +666,7 @@ function render() {
   if (!monsterHand.length) mhBox.innerHTML = '<div class="acthint">手札なし</div>';
   monsterHand.forEach((c, i) => {
     const canPlace = (byType.place || []).some((a) => a.hand === i);
-    mhBox.appendChild(monsterHandCard(c, i, selectedMonsterHand === i, canPlace));
+    mhBox.appendChild(monsterHandCard(c, i, false, canPlace));
   });
 
   // --- 手札 ---
@@ -690,6 +712,138 @@ function render() {
   } else {
     ov.classList.add("hidden");
   }
+
+  // 描き終わったので、控えておいた位置と見比べて動きを付ける
+  animateCards(cardsBefore);
+}
+
+/* ==================================================== カードの動きの演出
+   毎回カードを作り直す方式なので、そのままだと全部パッと入れ替わってしまい、
+   何が起きたのか分からない。そこで FLIP（描き直す前後の座標差を使う）で
+   「元の場所から今の場所へ動いてきた」ように見せる。
+
+   - 動いた   … 手札→ベンチ、ベンチ→バトル場など。元の位置から滑らせる
+   - 出てきた … ふわっと浮かび上がらせる
+   - 消えた   … 幽霊を残して2秒かけてゆっくり消す（何が退場したか見える）        */
+
+const MOVE_MS = 550;    // 移動にかける時間
+const GHOST_MS = 2000;  // 消えるカードが薄れて消えるまでの時間
+
+/* 攻撃モーション・被弾エフェクトは「1回の攻撃につき1回だけ」再生する。
+   盤面はカーソル操作などでも描き直されるので、そのたびに揺れないよう
+   サーバーから来る fx.seq を見て、まだ再生していないものだけを通す。 */
+let lastFxSeq = -1;
+let fxFresh = false;
+
+function fxIsNew() { return fxFresh; }
+
+function beginFxFrame() {
+  const seq = STATE && STATE.fx ? STATE.fx.seq : null;
+  fxFresh = seq != null && seq !== lastFxSeq;
+  if (fxFresh) lastFxSeq = seq;
+}
+
+function snapshotCards() {
+  const map = {};
+  document.querySelectorAll("[data-cardkey]").forEach((el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return;   // 非表示のものは対象外
+    map[el.dataset.cardkey] = {
+      rect: r,
+      code: el.dataset.cardcode || "",
+      el: el,
+      used: false,
+    };
+  });
+  return map;
+}
+
+function animateCards(before) {
+  if (!before) return;
+  const now = {};
+  document.querySelectorAll("[data-cardkey]").forEach((el) => {
+    now[el.dataset.cardkey] = el;
+  });
+
+  Object.keys(now).forEach((key) => {
+    const el = now[key];
+    let from = before[key];
+
+    // 手札から場に出た場合はキーが変わる（h♦Q#0 → m12）ので、
+    // 「消えた手札のカード」の中から同じカードを探して、そこから動かす。
+    if (!from && el.dataset.cardcode) {
+      const moved = Object.keys(before).find((k) =>
+        !now[k] && !before[k].used && before[k].code &&
+        before[k].code === el.dataset.cardcode);
+      if (moved) {
+        from = before[moved];
+        before[moved].used = true;   // これは「消えた」ではなく「動いた」
+      }
+    }
+
+    // 攻撃モーション中のカードは、揺れと移動が transform を奪い合うので動かさない
+    if (el.classList.contains("attacking")) return;
+
+    if (!from) {                      // 新しく出てきたカード
+      el.classList.add("card-appear");
+      return;
+    }
+
+    const to = el.getBoundingClientRect();
+    // 中心どうしを合わせる。手札カードと場のカードは大きさが違うので、
+    // 左上ではなく中心を基準にしないと、飛び先がずれて見える。
+    const dx = (from.rect.left + from.rect.width / 2) - (to.left + to.width / 2);
+    const dy = (from.rect.top + from.rect.height / 2) - (to.top + to.height / 2);
+    const scale = to.width > 0 ? from.rect.width / to.width : 1;
+    const scaled = Math.abs(scale - 1) > 0.05;
+    if (Math.abs(dx) < 2 && Math.abs(dy) < 2 && !scaled) return;   // 動いていない
+
+    // いったん元の位置・元の大きさに戻してから、本来の姿へ滑らせる
+    el.style.transition = "none";
+    el.style.transformOrigin = "50% 50%";
+    el.style.transform =
+      "translate(" + dx + "px, " + dy + "px)" + (scaled ? " scale(" + scale + ")" : "");
+    el.style.zIndex = "40";
+    requestAnimationFrame(() => {
+      el.style.transition = "transform " + MOVE_MS + "ms cubic-bezier(.22,.68,.3,1.1)";
+      el.style.transform = "";
+      setTimeout(() => {
+        el.style.transition = "";
+        el.style.zIndex = "";
+        el.style.transformOrigin = "";
+      }, MOVE_MS + 40);
+    });
+  });
+
+  // 場から消えたカードは、抜け殻をその場に残してゆっくり薄れさせる
+  Object.keys(before).forEach((key) => {
+    if (now[key] || before[key].used) return;
+    spawnGhost(before[key]);
+  });
+}
+
+function ghostLayer() {
+  let layer = $("ghostLayer");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.id = "ghostLayer";
+    document.body.appendChild(layer);
+  }
+  return layer;
+}
+
+function spawnGhost(info) {
+  const r = info.rect;
+  const g = info.el.cloneNode(true);
+  g.removeAttribute("data-cardkey");     // 次のスナップショットで拾われないように
+  g.classList.add("card-ghost");
+  g.style.left = r.left + "px";
+  g.style.top = r.top + "px";
+  g.style.width = r.width + "px";
+  g.style.height = r.height + "px";
+  ghostLayer().appendChild(g);
+  requestAnimationFrame(() => g.classList.add("fading"));
+  setTimeout(() => g.remove(), GHOST_MS + 120);
 }
 
 function optionSummary() {
@@ -719,8 +873,9 @@ function hintText(st, me, byType) {
 
 function fill(box, list, opts) {
   box.innerHTML = "";
-  list.forEach((m) => {
+  list.forEach((m, i) => {
     const merged = Object.assign({}, opts, { flash: flashClass(m) });
+    if (opts && opts.trackPrefix) merged.trackKey = opts.trackPrefix + i;
     box.appendChild(monsterCard(m, merged));
   });
 }

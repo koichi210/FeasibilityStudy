@@ -41,6 +41,25 @@ OPTION_LABELS = {
 
 
 # ==========================================================================
+# ログ1行分
+# ==========================================================================
+@dataclass
+class LogEntry:
+    """ログ1行。private_to が席番号なら、その人にしか見せない行。
+
+    ベンチとモンスター手札の中身は相手に伏せているので、
+    それらのカード名を含む行は private_to 付きで積む。
+    view() が viewer ごとに絞ってから返すので、
+    通信を覗かれても相手には流れない。
+    """
+    text: str
+    private_to: Optional[int] = None
+
+    def __str__(self) -> str:   # simulate.py の print 用
+        return self.text
+
+
+# ==========================================================================
 # 場に出ているモンスター1体分の状態
 # ==========================================================================
 @dataclass
@@ -158,7 +177,11 @@ class Game:
         self.current = 0
         self.winner: Optional[int] = None
         self.finish_reason = ""
-        self.log: List[str] = []
+        self.log: List[LogEntry] = []
+        # 直近の「見せ場」。画面が攻撃モーションや被弾エフェクトを出すのに使う。
+        # seq は再生済みかどうかの目印（同じ seq なら再生しない）。
+        self.fx: Optional[dict] = None
+        self.fx_seq = 0
         self.players = [
             Player(idx=i, name=names[i], is_cpu=cpu[i],
                    trainer_hp=B["trainer_hp"], trainer_hp_max=B["trainer_hp"],
@@ -190,8 +213,39 @@ class Game:
         self.uid_seq += 1
         return self.uid_seq
 
-    def _say(self, msg: str):
-        self.log.append(msg)
+    def _say(self, msg: str, private_to: Optional[int] = None):
+        """ログを1行足す。
+
+        private_to に席番号を渡すと、その人の画面にだけ出る。
+        ベンチ・モンスター手札の中身は相手に伏せているので、
+        それらに触れる行は必ず private_to を付けること（付け忘れ＝情報漏洩）。
+        """
+        self.log.append(LogEntry(msg, private_to))
+
+    def _fx(self, kind: str, attacker: Optional[Monster] = None,
+            target: Optional[Monster] = None):
+        """画面に出す演出（攻撃モーション・被弾の爪痕）を1つ予約する。
+
+        ルールには影響しない。画面側は seq を見て、まだ再生していないものだけを
+        再生する（同じ盤面を描き直すたびに何度も揺れてしまうのを防ぐため）。
+        """
+        self.fx_seq += 1
+        self.fx = {
+            "seq": self.fx_seq,
+            "kind": kind,
+            "attacker": attacker.uid if attacker else None,
+            "target": target.uid if target else None,
+        }
+
+    def _say_hidden(self, owner: Player, mine: str, theirs: str):
+        """伏せてある場所（ベンチ・モンスター手札）の出来事を、見せ方を変えて両者に伝える。
+
+        owner には具体的なカード名入りの `mine` を、相手には
+        カード名を伏せた `theirs` を出す。「何かが起きた」ことは伝わるが
+        「何のカードか」は漏れない。
+        """
+        self._say(mine, private_to=owner.idx)
+        self._say(theirs, private_to=1 - owner.idx)
 
     # ------------------------------------------------------------ 山札操作
     def _draw_monster(self, p: Player) -> Optional[Card]:
@@ -270,7 +324,11 @@ class Game:
                         break
                     p.bench[i] = self._spawn(p, card)
                     if not silent:
-                        self._say("🆕 {}：ベンチに {} が登場".format(p.name, self._nm(p.bench[i])))
+                        # ベンチの中身は相手に伏せる
+                        self._say_hidden(
+                            p,
+                            "🆕 {}：ベンチに {} が登場".format(p.name, self._nm(p.bench[i])),
+                            "🆕 {}：ベンチにモンスターが1体登場".format(p.name))
                     self._on_enter(p, p.bench[i], silent)
             return
 
@@ -283,8 +341,12 @@ class Game:
             return None
         p.monster_hand.append(card)
         if not silent:
-            self._say("🃏 {} が {} をモンスター手札に加えた".format(
-                p.name, "{}{}".format(card.label, card.name)))
+            # 手札の中身は相手に伏せる（引いた事実だけ伝える）
+            self._say_hidden(
+                p,
+                "🃏 {} が {} をモンスター手札に加えた".format(
+                    p.name, "{}{}".format(card.label, card.name)),
+                "🃏 {} がモンスターを1枚引いた".format(p.name))
         return card
 
     def _nm(self, m: Monster) -> str:
@@ -364,7 +426,10 @@ class Game:
             if m and m.bench_turns_left is not None:
                 m.bench_turns_left -= 1
                 if m.bench_turns_left <= 0:
-                    self._say("⌛ {} はベンチにいられる期限が切れて退場".format(self._nm(m)))
+                    self._say_hidden(
+                        p,
+                        "⌛ {} はベンチにいられる期限が切れて退場".format(self._nm(m)),
+                        "⌛ {} のベンチのモンスターが1体、期限切れで退場".format(p.name))
                     self._remove(p, m, to_discard=True)
 
         if self.winner is None:
@@ -488,7 +553,11 @@ class Game:
             elif isinstance(slot, int) and 0 <= slot < len(p.bench) and p.bench[slot] is None:
                 card = p.monster_hand.pop(i)
                 p.bench[slot] = self._spawn(p, card)
-                self._say("🆕 {}：ベンチに {} が登場".format(p.name, self._nm(p.bench[slot])))
+                # ベンチは伏せ札なので、相手にはカード名を出さない
+                self._say_hidden(
+                    p,
+                    "🆕 {}：ベンチに {} が登場".format(p.name, self._nm(p.bench[slot])),
+                    "🆕 {}：ベンチにモンスターを1体配置".format(p.name))
                 self._on_enter(p, p.bench[slot])
             else:
                 return False
@@ -530,6 +599,8 @@ class Game:
         p.attacked = True
         atk = self._effective_atk(p, a)
         aid = a.ability_id
+        # 攻撃した側は身構えて揺れ、殴られた側には爪痕が走る
+        self._fx("attack", attacker=a, target=o.battle)
 
         # 直接攻撃（相手の場が空）
         if o.battle is None:
@@ -610,9 +681,25 @@ class Game:
             return
         m.hp -= dmg
         if source in ("毒", "呪い"):
-            self._say("🩸 {} の {} が{}の継続ダメージで{}ダメージ".format(owner.name, self._nm(m), source, dmg))
+            self._say_visible(
+                owner, m,
+                "🩸 {} の {} が{}の継続ダメージで{}ダメージ".format(
+                    owner.name, self._nm(m), source, dmg),
+                "🩸 {} のベンチのモンスターが{}の継続ダメージで{}ダメージ".format(
+                    owner.name, source, dmg))
         if m.hp <= 0:
             self._defeat(owner, m, by_opponent)
+
+    def _say_visible(self, owner: Player, m: Monster, mine: str, theirs: str):
+        """モンスターの居場所に応じてログの見せ方を切り替える。
+
+        バトル場は公開情報なのでそのまま全員に出す。
+        ベンチは伏せ札なので、相手にはカード名を伏せた `theirs` を出す。
+        """
+        if owner.battle is m:
+            self._say(mine)
+        else:
+            self._say_hidden(owner, mine, theirs)
 
     def _defeat(self, owner: Player, m: Monster, by_opponent: bool):
         # 不死鳥：1度だけ全快で復活
@@ -620,9 +707,15 @@ class Game:
             m.revived = True
             m.hp = m.hp_max
             m.poison = 0
-            self._say("🔥 不死鳥が蘇った！{} はHP全快で復活".format(self._nm(m)))
+            self._say_visible(
+                owner, m,
+                "🔥 不死鳥が蘇った！{} はHP全快で復活".format(self._nm(m)),
+                "🔥 {} のベンチで不死鳥が蘇った".format(owner.name))
             return
-        self._say("☠️ {} の {} が倒れた".format(owner.name, self._nm(m)))
+        self._say_visible(
+            owner, m,
+            "☠️ {} の {} が倒れた".format(owner.name, self._nm(m)),
+            "☠️ {} のベンチのモンスターが1体倒れた".format(owner.name))
         self._remove(owner, m, to_discard=True)
         if by_opponent:
             v = B["kill_trainer_damage"]
@@ -644,6 +737,8 @@ class Game:
         e = c.effect
         t, v = e.type, e.value
         self._say("🎒 {} が「{}」を使用".format(p.name, c.name))
+        if e.cry:
+            self._say("🗣️ {}「{}」".format(p.name, e.cry))
 
         if t == "heal":
             p.battle.hp = min(p.battle.hp_max, p.battle.hp + v)
@@ -676,6 +771,7 @@ class Game:
             self._say("⚔️ {} の攻撃+{}（1回攻撃で壊れる）".format(self._nm(p.battle), v))
         elif t == "burn":
             self._say("🔥 {} に{}ダメージ".format(self._nm(o.battle), v))
+            self._fx("burn", target=o.battle)
             self._damage_monster(o, o.battle, v, source="呪符", by_opponent=True)
             if e.extra and p.battle:
                 self._say("🩸 反動で自分の {} に{}ダメージ".format(self._nm(p.battle), e.extra))
@@ -699,7 +795,10 @@ class Game:
                 card = self._draw_monster(p)
                 if card:
                     p.monster_hand.append(card)
-                    self._say("🃏 号令：{}{} をモンスター手札に追加".format(card.label, card.name))
+                    self._say_hidden(
+                        p,
+                        "🃏 号令：{}{} をモンスター手札に追加".format(card.label, card.name),
+                        "🃏 号令：{} がモンスターを1枚手札に加えた".format(p.name))
         elif t == "draw_items":
             n = 0
             for _ in range(v):
@@ -716,7 +815,10 @@ class Game:
                     best = max(monsters, key=lambda x: x.atk + x.dfn)
                     p.discard.remove(best)
                     p.monster_hand.append(best)
-                    self._say("🕊️ 蘇生：{}{} をモンスター手札に戻した".format(best.label, best.name))
+                    self._say_hidden(
+                        p,
+                        "🕊️ 蘇生：{}{} をモンスター手札に戻した".format(best.label, best.name),
+                        "🕊️ 蘇生：{} が捨て札からモンスターを1枚手札に戻した".format(p.name))
         elif t == "sacrifice":
             target = p.battle
             self._say("🩸 生贄の儀式：{} を捧げた".format(self._nm(target)))
@@ -728,8 +830,10 @@ class Game:
             self._say("🕯️ 禁断の契約：自分のトレーナーHP-{}".format(v))
             target = o.battle
             if target:
-                self._say("🌑 {} を強制退場させた".format(self._nm(target)))
-                self._remove(o, target, to_discard=True)
+                # 相手のモンスターを葬った扱い。倒したのはこちらなので
+                # 相手トレーナーにも撃破ダメージが入る（_remove では入らない）
+                self._say("🌑 {} を葬り去った".format(self._nm(target)))
+                self._defeat(o, target, by_opponent=True)
 
     # ================================================================== 終了
     def _check_end(self):
@@ -809,5 +913,9 @@ class Game:
             "actions": self.legal_actions(viewer),
             "winner": self.winner,
             "finish_reason": self.finish_reason,
-            "log": self.log[-60:],
+            # 自分に見せてよい行だけ残してから最後の60行を渡す。
+            # 相手のベンチ・モンスター手札に触れる行はここで落ちる。
+            "log": [e.text for e in self.log
+                    if e.private_to is None or e.private_to == viewer][-60:],
+            "fx": self.fx,
         }

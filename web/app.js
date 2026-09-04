@@ -291,6 +291,13 @@ function showToast(msg) {
 }
 
 /* ======================================================= カード描画 */
+// ベンチの支援カードによる一時バフは atk_now / def_now に含まれていないので、
+// 「30(+30)」のように増分を添えて、いま実際にいくつなのかを分かるようにする。
+function statWithBuff(v, buff) {
+  if (!buff) return String(v);
+  return v + '<span class="buffdelta">(+' + buff + ")</span>";
+}
+
 function monsterCard(m, opts) {
   opts = opts || {};
   if (!m) {
@@ -300,11 +307,26 @@ function monsterCard(m, opts) {
     if (opts.onClick) e.addEventListener("click", opts.onClick);
     return e;
   }
+  if (m.hidden) {
+    // 相手のベンチ：いる事は分かるが中身（名前・技・HP）は伏せ札。
+    const e = document.createElement("div");
+    e.className = "card hidden-card";
+    e.title = "相手のベンチ（中身は非公開）";
+    e.innerHTML =
+      '<div class="card-top"><span class="mark">🂠</span><span class="rank">？</span></div>' +
+      '<div class="card-name">？？？</div>' +
+      '<div class="stats"><span class="atk">⚔ ？</span><span class="def">🛡 ？</span></div>' +
+      '<div class="hpbar"><div class="hpfill enemy" style="width:100%"></div></div>' +
+      '<div class="hptext">？ / ？</div>' +
+      '<div class="ability">🙈 伏せられています</div>';
+    return e;
+  }
   const el = document.createElement("div");
   el.className = "card";
   if (RED_SUITS.has(m.suit)) el.classList.add("red");
   if (m.is_demon) el.classList.add("demon");
   if (m.fatigue > 0) el.classList.add("fatigued");
+  if (opts.done) el.classList.add("done");
   if (opts.flash) el.classList.add(opts.flash);
   if (opts.onClick) {
     el.classList.add("clickable");
@@ -324,6 +346,9 @@ function monsterCard(m, opts) {
   if (m.poison > 0) badges.push('<span class="chip warn">☠️ 毒' + m.poison + "</span>");
   if (m.curse > 0) badges.push('<span class="chip warn">🩸 呪' + m.curse + "</span>");
   if (m.is_demon) badges.push('<span class="chip info">👹 あと' + m.demon_turns + "T</span>");
+  if (m.bench_turns_left != null) {
+    badges.push('<span class="chip warn">⌛ ベンチあと' + m.bench_turns_left + "T</span>");
+  }
   if (m.revived) badges.push('<span class="chip good">🔥 復活済</span>');
   badges.push('<span class="chip info">残攻撃' + m.attacks_left + "</span>");
   (m.equipment || []).forEach((eq) => {
@@ -334,8 +359,8 @@ function monsterCard(m, opts) {
     '<div class="card-top"><span class="mark">' + m.mark + "</span>" +
       '<span class="rank">' + m.rank_label + "</span></div>" +
     '<div class="card-name">' + escapeHtml(m.name) + "</div>" +
-    '<div class="stats"><span class="atk">⚔ ' + m.atk_now + "</span>" +
-      '<span class="def">🛡 ' + m.def_now + "</span></div>" +
+    '<div class="stats"><span class="atk">⚔ ' + statWithBuff(m.atk_now, m.atk_buff) + "</span>" +
+      '<span class="def">🛡 ' + statWithBuff(m.def_now, m.def_buff) + "</span></div>" +
     '<div class="hpbar"><div class="hpfill ' + (opts.mine ? "mine" : "enemy") +
       '" style="width:' + hpRate * 100 + '%"></div></div>' +
     '<div class="hptext">' + m.hp + " / " + m.hp_max + "</div>" +
@@ -348,7 +373,8 @@ function monsterCard(m, opts) {
 function monsterZoom(m) {
   let h = '<div class="zp-head"><span class="zp-mark">' + m.mark + m.rank_label + "</span>" +
             '<span class="zp-name">' + escapeHtml(m.name) + "</span></div>";
-  h += '<div class="zp-stats">⚔ 攻撃 <b>' + m.atk_now + "</b>　🛡 防御 <b>" + m.def_now +
+  h += '<div class="zp-stats">⚔ 攻撃 <b>' + statWithBuff(m.atk_now, m.atk_buff) +
+         "</b>　🛡 防御 <b>" + statWithBuff(m.def_now, m.def_buff) +
          "</b>　❤️ HP <b>" + m.hp + " / " + m.hp_max + "</b></div>";
   if (m.ability) {
     h += '<div class="zp-abname">✨ ' + escapeHtml(m.ability.name) + "</div>";
@@ -360,7 +386,12 @@ function monsterZoom(m) {
   if (m.fatigue > 0) st.push("😴 疲労中（あと" + m.fatigue + "ターン攻撃できない）");
   if (m.poison > 0) st.push("☠️ 毒（毎ターン" + m.poison + "ダメージ）");
   if (m.curse > 0) st.push("🩸 呪い（毎ターン" + m.curse + "ダメージ）");
+  if (m.atk_buff) st.push("👑 指揮官キングの支援：攻撃+" + m.atk_buff);
+  if (m.def_buff) st.push("🛡️ 聖女クイーンの支援：防御+" + m.def_buff);
   if (m.is_demon) st.push("👹 魔王（あと" + m.demon_turns + "ターンで消滅）");
+  if (m.bench_turns_left != null) {
+    st.push("⌛ ベンチにいられるのはあと" + m.bench_turns_left + "ターン（切れると強制退場）");
+  }
   if (m.revived) st.push("🔥 不死鳥で復活済み（もう復活できない）");
   st.push("🚪 あと " + m.attacks_left + " 回攻撃したら退場");
   if ((m.equipment || []).length) st.push("🎒 装備: " + m.equipment.join(" / "));
@@ -575,11 +606,16 @@ function render() {
   const placesHere = (slot) => selectedMonsterHand != null &&
     (byType.place || []).some((a) => a.hand === selectedMonsterHand && a.slot === slot);
 
+  // 攻撃 or 交代のどちらかを使い終えたら、バトル場・ベンチのカードを
+  // アイテム手札の「使えない」表示と同じ薄暗さにして、行動済みだと一目で分かるようにする。
+  const fieldSpent = !!me.attacked || me.swaps_left <= 0;
+
   const battleBox = $("myBattle");
   battleBox.innerHTML = "";
   battleBox.appendChild(monsterCard(me.battle, {
     mine: true,
     flash: flashClass(me.battle),
+    done: fieldSpent,
     onClick: (!me.battle && placesHere("battle")) ? () => placeSelected("battle") : null,
   }));
 
@@ -591,6 +627,7 @@ function render() {
     benchBox.appendChild(monsterCard(m, {
       mine: true,
       flash: flashClass(m),
+      done: fieldSpent,
       onClick: swap ? () => send({ type: "swap", bench: i })
                : place ? () => placeSelected(i) : null,
       actionLabel: "🔄 バトル場と交代する",
@@ -636,7 +673,10 @@ function render() {
     if (i === arr.length - 1) d.classList.add("newest");
     logBox.appendChild(d);
   });
-  logBox.scrollTop = logBox.scrollHeight;
+  // スクロールバーがあるのは logList 自身ではなく、外側の .tabpanel（#panel-log）。
+  // logList にスクロール位置を設定しても何も起きないので、親のほうを動かす。
+  const logPanel = logBox.parentElement;
+  if (logPanel) logPanel.scrollTop = logPanel.scrollHeight;
 
   // --- 決着 ---
   const ov = $("overlay");

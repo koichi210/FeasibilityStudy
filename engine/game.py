@@ -22,6 +22,10 @@ B = BALANCE
 AV = B["ability_values"]
 DEMON = B["demon_lord"]
 
+# ベンチにいる間だけ盤面全体にバフをかけ続けるカード。
+# 置きっぱなしで恒久バフになってしまうのを防ぐため、ベンチ滞在ターン数に上限を設ける。
+BENCH_LIMITED_ABILITIES = {"H_Q_guard", "C_K_command"}
+
 # ゲームオプション。新しいゲームを始めるときに指定する。
 #   monster_abilities … J/Q/K/A の特殊能力を使うか。オフだとルールがぐっと単純になる
 #   demon_lord        … ♠A の魔王を使うか（技オフのときは自動的にオフ扱い）
@@ -59,6 +63,8 @@ class Monster:
     is_demon: bool = False
     demon_turns: int = 0
     ability_enabled: bool = True   # 「技なし」オプション時は False
+    bench_turns_left: Optional[int] = None  # 聖女クイーン・指揮官キング専用：
+                                             # ベンチにいられる残りターン（None＝対象外）
 
     @property
     def ability_id(self) -> Optional[str]:
@@ -89,6 +95,7 @@ class Monster:
             "is_demon": self.is_demon,
             "demon_turns": self.demon_turns,
             "revived": self.revived,
+            "bench_turns_left": self.bench_turns_left,
         })
         if self.is_demon:
             d["name"] = "魔王"
@@ -220,15 +227,18 @@ class Game:
                     hp=B["monster_hp"], hp_max=B["monster_hp"],
                     base_atk=card.atk, base_def=card.dfn,
                     ability_enabled=self.options["monster_abilities"])
+        if m.ability_id in BENCH_LIMITED_ABILITIES:
+            m.bench_turns_left = B["bench_ability_turns"]
         return m
 
     # --------------------------------------------------------------- 場補充
     def _refill_field(self, p: Player, silent: bool = False, instant: bool = False):
-        """バトル場の繰り上げと、モンスターの補充を行う。
+        """バトル場の繰り上げを行う（空きがあればベンチから自動で上がる）。
 
-        通常（instant=False）は、補充された分をモンスター手札に置くだけ。
-        実際にバトル場・ベンチへ置くのは、プレイヤー（またはCPU）の
-        「配置」操作（apply_action の type="place"）。
+        モンスター手札への補充はここではやらない。アイテム手札と同じく
+        `_draw_monster_to_hand` が自分のターン開始時に1枚だけ引く
+        （`_begin_turn` 参照）。実際にバトル場・ベンチへ置くのは、
+        プレイヤー（またはCPU）の「配置」操作（apply_action の type="place"）。
 
         instant=True は **ゲーム開始時専用**。手札を経由すると、先攻が
         「配置→攻撃」を済ませる間、後攻はまだ1度も配置できておらず
@@ -264,16 +274,18 @@ class Game:
                     self._on_enter(p, p.bench[i], silent)
             return
 
-        # 空いている枠の数だけ、山札からモンスター手札に引く。置き場所はあとで選ぶ。
-        empty = (1 if p.battle is None else 0) + sum(1 for b in p.bench if b is None)
-        while len(p.monster_hand) < empty:
-            card = self._draw_monster(p)
-            if not card:
-                break
-            p.monster_hand.append(card)
-            if not silent:
-                self._say("🃏 {} が {} をモンスター手札に加えた".format(
-                    p.name, "{}{}".format(card.label, card.name)))
+    def _draw_monster_to_hand(self, p: Player, silent: bool = False) -> Optional[Card]:
+        """モンスター手札にターン開始時1枚だけ引く（アイテム手札と同じ方式）。"""
+        if len(p.monster_hand) >= B["hand_size_max"]:
+            return None
+        card = self._draw_monster(p)
+        if not card:
+            return None
+        p.monster_hand.append(card)
+        if not silent:
+            self._say("🃏 {} が {} をモンスター手札に加えた".format(
+                p.name, "{}{}".format(card.label, card.name)))
+        return card
 
     def _nm(self, m: Monster) -> str:
         return "魔王" if m.is_demon else "{} {}".format(m.card.label, m.card.name)
@@ -321,10 +333,13 @@ class Game:
                 m.fatigue -= 1
 
         # 毒・呪いの継続ダメージ
+        # 毒＝相手が仕掛けてきたもの→倒れたら相手のせい（トレーナーダメージあり）
+        # 呪い＝自分の魔剣の自傷→倒れたら自分のせい（トレーナーダメージなし）
         for m in list(p.field_monsters()):
-            tick = m.poison + m.curse
-            if tick > 0:
-                self._damage_monster(p, m, tick, source="継続ダメージ", by_opponent=False)
+            if m.poison > 0:
+                self._damage_monster(p, m, m.poison, source="毒", by_opponent=True)
+            if m.hp > 0 and m.curse > 0:
+                self._damage_monster(p, m, m.curse, source="呪い", by_opponent=False)
 
         # ターン開始時の技
         for m in p.field_monsters():
@@ -342,8 +357,19 @@ class Game:
                 self._say("👹 {} の魔王が消滅した".format(p.name))
                 self._remove(p, p.battle, to_discard=True)
 
+        # 聖女クイーン・指揮官キングのベンチ滞在カウントダウン：
+        # ベンチに置いておくだけの恒久バフにならないよう、上限ターンで強制退場させる。
+        # バトル場にいる間はカウントしない（魔王とは逆の向き）。
+        for m in list(p.bench):
+            if m and m.bench_turns_left is not None:
+                m.bench_turns_left -= 1
+                if m.bench_turns_left <= 0:
+                    self._say("⌛ {} はベンチにいられる期限が切れて退場".format(self._nm(m)))
+                    self._remove(p, m, to_discard=True)
+
         if self.winner is None:
             self._refill_field(p)
+            self._draw_monster_to_hand(p)
             self._draw_item(p)
         self._check_end()
 
@@ -583,8 +609,8 @@ class Game:
         if dmg <= 0 or m.hp <= 0:
             return
         m.hp -= dmg
-        if source == "継続ダメージ":
-            self._say("🩸 {} の {} が{}で{}ダメージ".format(owner.name, self._nm(m), source, dmg))
+        if source in ("毒", "呪い"):
+            self._say("🩸 {} の {} が{}の継続ダメージで{}ダメージ".format(owner.name, self._nm(m), source, dmg))
         if m.hp <= 0:
             self._defeat(owner, m, by_opponent)
 
@@ -667,10 +693,13 @@ class Game:
             p.swaps_left += 1
             self._say("🔄 交代権を1回追加")
         elif t == "deploy":
-            card = self._draw_monster(p)
-            if card:
-                p.monster_hand.append(card)
-                self._say("🃏 号令：{}{} をモンスター手札に追加".format(card.label, card.name))
+            if len(p.monster_hand) >= B["hand_size_max"]:
+                self._say("🚫 号令：モンスター手札が上限で追加できなかった")
+            else:
+                card = self._draw_monster(p)
+                if card:
+                    p.monster_hand.append(card)
+                    self._say("🃏 号令：{}{} をモンスター手札に追加".format(card.label, card.name))
         elif t == "draw_items":
             n = 0
             for _ in range(v):
@@ -679,12 +708,15 @@ class Game:
                 n += 1
             self._say("📜 アイテムを{}枚引いた".format(n))
         elif t == "revive":
-            monsters = [x for x in p.discard if x.kind == "monster"]
-            if monsters:
-                best = max(monsters, key=lambda x: x.atk + x.dfn)
-                p.discard.remove(best)
-                p.monster_hand.append(best)
-                self._say("🕊️ 蘇生：{}{} をモンスター手札に戻した".format(best.label, best.name))
+            if len(p.monster_hand) >= B["hand_size_max"]:
+                self._say("🚫 蘇生：モンスター手札が上限で戻せなかった")
+            else:
+                monsters = [x for x in p.discard if x.kind == "monster"]
+                if monsters:
+                    best = max(monsters, key=lambda x: x.atk + x.dfn)
+                    p.discard.remove(best)
+                    p.monster_hand.append(best)
+                    self._say("🕊️ 蘇生：{}{} をモンスター手札に戻した".format(best.label, best.name))
         elif t == "sacrifice":
             target = p.battle
             self._say("🩸 生贄の儀式：{} を捧げた".format(self._nm(target)))
@@ -726,18 +758,33 @@ class Game:
 
     # ============================================================ 盤面の公開
     def view(self, viewer: int) -> dict:
-        """viewer から見た盤面。相手の手札・山札の中身は含めない。"""
+        """viewer から見た盤面。相手の手札・山札の中身・ベンチの中身は含めない。
+
+        バトル場は攻撃対象になるので常に公開。ベンチは伏せ札扱いで、
+        相手には「何体いるか」だけが伝わり、中身（名前・技・HPなど）は隠す。
+        """
         me = self.players[viewer]
         op = self.players[1 - viewer]
 
         def side(p: Player, hide_hand: bool) -> dict:
+            bench_view = ([({"hidden": True} if m else None) for m in p.bench]
+                          if hide_hand else
+                          [m.to_dict() if m else None for m in p.bench])
+            # ベンチの支援カード（指揮官キング・聖女クイーン）による一時バフ。
+            # atk_now / def_now には含めず、増分を別に渡して画面で「30(+30)」と出す。
+            battle_view = p.battle.to_dict() if p.battle else None
+            if battle_view:
+                battle_view["atk_buff"] = (AV["C_K_command"]
+                                           if p.has_bench_ability("C_K_command") else 0)
+                battle_view["def_buff"] = (AV["H_Q_guard"]
+                                           if p.has_bench_ability("H_Q_guard") else 0)
             return {
                 "name": p.name,
                 "is_cpu": p.is_cpu,
                 "trainer_hp": p.trainer_hp,
                 "trainer_hp_max": p.trainer_hp_max,
-                "battle": p.battle.to_dict() if p.battle else None,
-                "bench": [m.to_dict() if m else None for m in p.bench],
+                "battle": battle_view,
+                "bench": bench_view,
                 "hand": ([] if hide_hand else [c.to_dict() for c in p.hand]),
                 "hand_count": len(p.hand),
                 "monster_hand": ([] if hide_hand else [c.to_dict() for c in p.monster_hand]),

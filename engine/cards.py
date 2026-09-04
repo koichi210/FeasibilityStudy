@@ -136,7 +136,8 @@ FACE_ABILITIES: Dict[str, Dict[str, str]] = {
     "DQ": {"name": "ピアススピア", "id": "D_Q_pierce",
            "text": "攻撃時、相手の防御を{}%として計算".format(int(AV["D_Q_pierce_rate"] * 100))},
     "HQ": {"name": "聖女クイーン", "id": "H_Q_guard",
-           "text": "ベンチにいる間、バトル場の防御+{}".format(AV["H_Q_guard"])},
+           "text": "ベンチにいる間、バトル場の防御+{}（ベンチにいられるのは{}ターンまで）".format(
+               AV["H_Q_guard"], BALANCE["bench_ability_turns"])},
     "CQ": {"name": "策謀のクイーン", "id": "C_Q_scheme",
            "text": "登場時、アイテムを{}枚引く".format(AV["C_Q_draw"])},
     "SQ": {"name": "ポイズンクイーン", "id": "S_Q_poison",
@@ -147,7 +148,8 @@ FACE_ABILITIES: Dict[str, Dict[str, str]] = {
     "HK": {"name": "聖王", "id": "H_K_holy",
            "text": "登場時、自分のトレーナーHPを{}回復".format(AV["H_K_trainer_heal"])},
     "CK": {"name": "指揮官キング", "id": "C_K_command",
-           "text": "ベンチにいる間、バトル場の攻撃+{}".format(AV["C_K_command"])},
+           "text": "ベンチにいる間、バトル場の攻撃+{}（ベンチにいられるのは{}ターンまで）".format(
+               AV["C_K_command"], BALANCE["bench_ability_turns"])},
     "SK": {"name": "暴君", "id": "S_K_tyrant",
            "text": "攻撃しても疲労しない / 攻撃のたび自分に{}ダメージ".format(
                AV["S_K_tyrant_recoil"])},

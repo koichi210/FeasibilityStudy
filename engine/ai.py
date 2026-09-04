@@ -75,11 +75,11 @@ def _score_item(g: Game, p: Player, o: Player, card, conf: dict) -> float:
     if t == "free_swap":
         return 5
     if t == "deploy":
-        return 15
+        return 15 if len(p.monster_hand) < B["hand_size_max"] else -1
     if t == "draw_items":
         return 20
     if t == "revive":
-        return 25
+        return 25 if len(p.monster_hand) < B["hand_size_max"] else -1
     if t == "sacrifice":
         # 瀕死のモンスターを捧げるのは有効
         return (v + 20) if bm and hp_rate < 0.3 else -1

@@ -12,6 +12,7 @@
   "initial_hand_size": 3,
   "attacks_before_retire": 2,
   "fatigue_turns": 2,
+  "bench_ability_turns": 3,
 
   "suit_modifier": {
     "S": { "atk": 30, "def": -30 },

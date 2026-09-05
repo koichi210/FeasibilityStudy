@@ -188,13 +188,21 @@ body {
   content: ""; position: absolute; left: 50%; top: 50%;
   width: 5px; height: 150%; margin-left: -2.5px; margin-top: -75%;
   border-radius: 3px;
+  /* 爪痕の色は #DE1717。発光させると目に刺さるので、
+     まわりの光は暗めの赤にとどめて輪郭だけ締める。 */
   background: linear-gradient(180deg,
-    rgba(255,90,80,0) 0%, rgba(255,70,60,.95) 22%,
-    rgba(255,190,180,1) 50%, rgba(255,70,60,.95) 78%, rgba(255,90,80,0) 100%);
-  box-shadow: 0 0 12px rgba(255,60,50,.95);
+    rgba(222,23,23,0) 0%, rgba(222,23,23,.9) 20%,
+    rgba(222,23,23,1) 50%, rgba(222,23,23,.9) 80%, rgba(222,23,23,0) 100%);
+  box-shadow: 0 0 8px rgba(130,10,10,.6);
+  /* 素の状態は「見えない・回転していない縦棒」。
+     アニメが終わったあとにここへ戻ると赤い棒が残ってしまうので、
+     必ず opacity:0 にしておき、fill-mode は both で最後の姿を保たせる。 */
+  opacity: 0;
 }
-.claw::before { animation: clawSlashA 1.5s ease-out forwards; }
-.claw::after  { animation: clawSlashB 1.5s ease-out .14s backwards; }
+/* 爪痕が走るのは clawed が付いた瞬間。
+   カードが移動している最中は付けないので、動きが終わってから斬られる。 */
+.card.clawed .claw::before { animation: clawSlashA 1.5s ease-out both; }
+.card.clawed .claw::after  { animation: clawSlashB 1.5s ease-out .14s both; }
 
 @keyframes clawSlashA {
   0%   { opacity: 0; transform: rotate(34deg) scaleY(0); }

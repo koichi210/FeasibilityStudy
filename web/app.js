@@ -333,12 +333,18 @@ function monsterCard(m, opts) {
   if (m.is_demon) el.classList.add("demon");
   if (m.fatigue > 0) el.classList.add("fatigued");
   if (opts.done) el.classList.add("done");
-  if (opts.flash) el.classList.add(opts.flash);
-  // 攻撃した本人は身構えて揺れる／殴られた側には爪痕を走らせる
+
+  // 被弾の演出（点滅・爪痕）は、このカードが移動しているなら
+  // 動き終わってから出す。動きながら斬られると何が起きたか分からないため。
+  // ここでは「あとで付けるクラス」として控えておくだけ。
+  const fxLater = [];
+  if (opts.flash) fxLater.push(opts.flash);
   if (fxIsNew() && STATE.fx) {
+    // 攻撃する側は移動しないので、揺れだけはその場で始めてよい
     if (STATE.fx.attacker === m.uid) el.classList.add("attacking");
-    if (STATE.fx.target === m.uid) el.classList.add("clawed");
+    if (STATE.fx.target === m.uid) fxLater.push("clawed");
   }
+  if (fxLater.length) el.dataset.fxafter = fxLater.join(" ");
   if (opts.onClick) {
     el.classList.add("clickable");
     el.title = opts.title || "";
@@ -377,8 +383,9 @@ function monsterCard(m, opts) {
     '<div class="hptext">' + m.hp + " / " + m.hp_max + "</div>" +
     '<div class="badges">' + badges.join("") + "</div>" +
     '<div class="ability">' + (m.ability ? escapeHtml(m.ability.text) : "") + "</div>" +
-    // 被弾の爪痕。クラスが付いているときだけCSSで見えるようにしてある
-    (el.classList.contains("clawed") ? '<div class="claw"></div>' : "");
+    // 被弾の爪痕の器。実際に走るのは clawed クラスが付いた瞬間なので、
+    // 置いておくだけならまだ何も見えない（移動が終わってから付ける）
+    (fxLater.indexOf("clawed") >= 0 ? '<div class="claw"></div>' : "");
   attachHover(el, monsterZoom(m));
   return el;
 }
@@ -782,10 +789,11 @@ function animateCards(before) {
     }
 
     // 攻撃モーション中のカードは、揺れと移動が transform を奪い合うので動かさない
-    if (el.classList.contains("attacking")) return;
+    if (el.classList.contains("attacking")) { applyPendingFx(el, 0); return; }
 
     if (!from) {                      // 新しく出てきたカード
       el.classList.add("card-appear");
+      applyPendingFx(el, 0);
       return;
     }
 
@@ -796,7 +804,10 @@ function animateCards(before) {
     const dy = (from.rect.top + from.rect.height / 2) - (to.top + to.height / 2);
     const scale = to.width > 0 ? from.rect.width / to.width : 1;
     const scaled = Math.abs(scale - 1) > 0.05;
-    if (Math.abs(dx) < 2 && Math.abs(dy) < 2 && !scaled) return;   // 動いていない
+    if (Math.abs(dx) < 2 && Math.abs(dy) < 2 && !scaled) {   // 動いていない
+      applyPendingFx(el, 0);
+      return;
+    }
 
     // いったん元の位置・元の大きさに戻してから、本来の姿へ滑らせる
     el.style.transition = "none";
@@ -813,6 +824,8 @@ function animateCards(before) {
         el.style.transformOrigin = "";
       }, MOVE_MS + 40);
     });
+    // 移動しきってからダメージを受ける
+    applyPendingFx(el, MOVE_MS + 60);
   });
 
   // 場から消えたカードは、抜け殻をその場に残してゆっくり薄れさせる
@@ -820,6 +833,21 @@ function animateCards(before) {
     if (now[key] || before[key].used) return;
     spawnGhost(before[key]);
   });
+}
+
+/* 控えておいた被弾演出（点滅・爪痕）を実際に発動させる。
+   カードが動いた場合は、動き終わるのを待ってから斬られるようにする。 */
+function applyPendingFx(el, delay) {
+  const cls = el.dataset.fxafter;
+  if (!cls) return;
+  delete el.dataset.fxafter;   // 二重に発動させない
+  const go = () => {
+    // 待っている間に描き直されて、この要素が捨てられていることがある
+    if (!el.isConnected) return;
+    cls.split(" ").forEach((c) => { if (c) el.classList.add(c); });
+  };
+  if (delay > 0) setTimeout(go, delay);
+  else requestAnimationFrame(go);
 }
 
 function ghostLayer() {

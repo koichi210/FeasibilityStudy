@@ -1,0 +1,1014 @@
+<title>スライム建国記</title>
+<meta name="description" content="小さなスライムが目覚めた森を拠点に、周辺勢力との外交と侵攻で地図を塗り替えていく国造りシミュレーション。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kaisei+Decol:wght@400;700&family=Zen+Maru+Gothic:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#202b26;
+    --paper:#e9e4cf;
+    --paper-raised:#f5f1e2;
+    --paper-raised-2:#e0d9bd;
+    --slime:#2f9e78;
+    --slime-glow:#3fb98d;
+    --slime-soft:#cfe6da;
+    --ember:#b5502f;
+    --ember-soft:#e4c9ba;
+    --trade:#a5822f;
+    --trade-soft:#e9dcb0;
+    --line:#b8a97c;
+    --line-soft:#cfc39c;
+    --text:#202b26;
+    --text-muted:#5f6d5c;
+    --danger:#a23b2d;
+    --shadow:0 1px 2px rgba(32,43,38,.10), 0 6px 18px rgba(32,43,38,.08);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#eef1ea;
+      --paper:#131b17;
+      --paper-raised:#1b2621;
+      --paper-raised-2:#243129;
+      --slime:#4fbd8f;
+      --slime-glow:#6fd6ac;
+      --slime-soft:#1f3a30;
+      --ember:#d97e53;
+      --ember-soft:#3a271d;
+      --trade:#d9b968;
+      --trade-soft:#3b3220;
+      --line:#4a5a48;
+      --line-soft:#374238;
+      --text:#eef1ea;
+      --text-muted:#9db09f;
+      --danger:#e08268;
+      --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 28px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#eef1ea;
+    --paper:#131b17;
+    --paper-raised:#1b2621;
+    --paper-raised-2:#243129;
+    --slime:#4fbd8f;
+    --slime-glow:#6fd6ac;
+    --slime-soft:#1f3a30;
+    --ember:#d97e53;
+    --ember-soft:#3a271d;
+    --trade:#d9b968;
+    --trade-soft:#3b3220;
+    --line:#4a5a48;
+    --line-soft:#374238;
+    --text:#eef1ea;
+    --text-muted:#9db09f;
+    --danger:#e08268;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 28px rgba(0,0,0,.4);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--text);
+    font-family:'Zen Maru Gothic','Hiragino Maru Gothic ProN',sans-serif;
+    position:relative;
+    min-height:100vh;
+  }
+  body::before{
+    content:"";
+    position:fixed; inset:0; z-index:0; pointer-events:none;
+    opacity:.05;
+    background-image:
+      repeating-linear-gradient(115deg, var(--ink) 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(25deg, var(--ink) 0 1px, transparent 1px 4px);
+  }
+  h1,h2,h3{ font-family:'Kaisei Decol','Shippori Mincho',serif; text-wrap:balance; margin:0; }
+  .num{ font-family:'JetBrains Mono','SFMono-Regular',monospace; font-variant-numeric:tabular-nums; }
+  button, input{ font-family:inherit; }
+  button:focus-visible, input:focus-visible, .hex:focus-visible{
+    outline:2px solid var(--slime-glow); outline-offset:2px;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+  }
+
+  .app{ position:relative; z-index:1; max-width:1180px; margin:0 auto; padding:20px 20px 48px; }
+
+  /* header */
+  .header{
+    display:flex; flex-wrap:wrap; gap:16px 28px;
+    align-items:flex-end; justify-content:space-between;
+    padding-bottom:16px; border-bottom:1px solid var(--line-soft);
+  }
+  .title-block h1{ font-size:clamp(1.6rem, 1.2rem + 1.6vw, 2.3rem); font-weight:700; letter-spacing:.02em; }
+  .title-block p{ margin:.35rem 0 0; color:var(--text-muted); font-size:.92rem; }
+  .turn-controls{ display:flex; align-items:center; gap:12px; }
+  .turn-badge{ font-size:.8rem; color:var(--text-muted); }
+  .turn-badge .num{ font-size:1.05rem; color:var(--text); font-weight:700; }
+  .btn{
+    border:1px solid transparent; border-radius:6px; padding:10px 18px;
+    font-size:.9rem; font-weight:700; cursor:pointer; transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .btn-primary{ background:var(--slime); color:#f7fbf8; box-shadow:var(--shadow); }
+  .btn-primary:hover{ transform:translateY(-1px); }
+  .btn-ghost{ background:transparent; color:var(--text-muted); border-color:var(--line-soft); }
+  .btn-ghost:hover{ color:var(--text); border-color:var(--line); }
+  .btn-small{ padding:6px 12px; font-size:.78rem; border-radius:5px; background:var(--paper-raised-2); color:var(--text); border:1px solid var(--line-soft); }
+  .btn-small:disabled, .btn:disabled{ opacity:.45; cursor:not-allowed; transform:none; }
+  .btn-small:not(:disabled):hover{ border-color:var(--slime); color:var(--slime); }
+
+  /* resource ticker */
+  .resource-bar{
+    display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px;
+    margin:18px 0 22px;
+  }
+  .res-tile{
+    background:var(--paper-raised); border:1px solid var(--line-soft); border-radius:10px;
+    padding:12px 14px; box-shadow:var(--shadow);
+    display:flex; flex-direction:column; gap:4px;
+  }
+  .res-label{ font-size:.72rem; letter-spacing:.06em; color:var(--text-muted); }
+  .res-value{ font-size:1.3rem; font-weight:700; }
+  .res-delta{ font-size:.72rem; color:var(--slime-glow); }
+
+  /* main grid */
+  .main-grid{ display:grid; grid-template-columns:minmax(0,1.55fr) minmax(280px,1fr); gap:18px; align-items:start; }
+  @media (max-width:880px){ .main-grid{ grid-template-columns:1fr; } }
+
+  .panel{
+    background:var(--paper-raised); border:1px solid var(--line-soft); border-radius:12px;
+    padding:18px; box-shadow:var(--shadow);
+  }
+  .panel + .panel{ margin-top:16px; }
+  .panel h2{ font-size:1.05rem; font-weight:700; margin-bottom:4px; }
+  .panel .sub{ color:var(--text-muted); font-size:.8rem; margin-bottom:14px; }
+
+  /* map */
+  .map-svg{ width:100%; height:auto; display:block; }
+  .hex{ stroke-width:2px; cursor:pointer; transition:transform .15s ease, filter .15s ease; transform-box:fill-box; transform-origin:center; }
+  .hex:hover{ transform:scale(1.045); }
+  .hex[data-faction="player"]{ fill:var(--slime); stroke:var(--slime-glow); }
+  .hex[data-faction="neutral"]{ fill:var(--paper-raised-2); stroke:var(--line); }
+  .hex[data-faction="ironhammer"]{ fill:var(--trade-soft); stroke:var(--trade); }
+  .hex[data-faction="obsidian"]{ fill:var(--ember-soft); stroke:var(--ember); }
+  .hex.inert{ opacity:.55; cursor:default; }
+  .hex.inert:hover{ transform:none; }
+  .hex.actionable{ stroke-dasharray:5 4; animation:pulseline 2.4s linear infinite; }
+  @keyframes pulseline{ to{ stroke-dashoffset:-18; } }
+  .hex.selected{ stroke:var(--ink); stroke-width:3px; }
+  .hex-label{ font-family:'Zen Maru Gothic',sans-serif; font-size:9px; fill:var(--ink); pointer-events:none; text-anchor:middle; }
+  .hex-home-mark{ fill:var(--paper); pointer-events:none; }
+
+  .legend{ display:flex; flex-wrap:wrap; gap:14px; margin-top:12px; font-size:.76rem; color:var(--text-muted); }
+  .legend-item{ display:flex; align-items:center; gap:6px; }
+  .legend-swatch{ width:12px; height:12px; border-radius:3px; display:inline-block; border:1px solid var(--line-soft); }
+
+  /* detail card */
+  .detail-card{ margin-top:16px; border-top:1px dashed var(--line-soft); padding-top:14px; }
+  .detail-head{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .detail-head h3{ font-size:1.15rem; }
+  .faction-tag{ font-size:.7rem; padding:3px 9px; border-radius:999px; font-weight:700; letter-spacing:.04em; white-space:nowrap; }
+  .faction-tag.player{ background:var(--slime-soft); color:var(--slime); }
+  .faction-tag.neutral{ background:var(--line-soft); color:var(--text-muted); }
+  .faction-tag.ironhammer, .faction-tag.status-ceasefire{ background:var(--trade-soft); color:var(--trade); }
+  .faction-tag.obsidian, .faction-tag.status-hostile{ background:var(--ember-soft); color:var(--ember); }
+  .faction-tag.status-alliance{ background:var(--slime-soft); color:var(--slime); }
+  .detail-flavor{ color:var(--text-muted); font-size:.86rem; margin:.5rem 0; line-height:1.7; }
+  .detail-stats{ display:flex; gap:18px; font-size:.8rem; color:var(--text-muted); margin-bottom:10px; }
+  .detail-stats b{ color:var(--text); font-family:'JetBrains Mono',monospace; }
+  .action-row{ display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }
+  .action-btn{
+    flex:1 1 220px; text-align:left; border:1px solid var(--line-soft); background:var(--paper-raised-2);
+    border-radius:8px; padding:12px 14px; cursor:pointer; transition:border-color .12s ease;
+  }
+  .action-btn:hover:not(:disabled){ border-color:var(--slime); }
+  .action-btn strong{ display:block; font-size:.88rem; margin-bottom:3px; }
+  .action-btn span{ display:block; font-size:.74rem; color:var(--text-muted); }
+  .action-btn .chance{ font-family:'JetBrains Mono',monospace; color:var(--slime); font-weight:700; }
+  .note{ font-size:.8rem; color:var(--text-muted); font-style:italic; }
+  .warn-note{ font-size:.78rem; color:var(--ember); margin:8px 0 0; }
+
+  /* evolution */
+  .evo-name{ font-size:1.2rem; margin-bottom:4px; }
+  .evo-next{ font-size:.76rem; color:var(--text-muted); margin-bottom:10px; }
+  .evo-bar-track{ height:10px; border-radius:999px; background:var(--paper-raised-2); border:1px solid var(--line-soft); overflow:hidden; }
+  .evo-bar-fill{ height:100%; background:linear-gradient(90deg, var(--slime), var(--slime-glow)); border-radius:999px; transition:width .3s ease; }
+  .evo-exp{ margin-top:6px; font-size:.72rem; color:var(--text-muted); text-align:right; }
+
+  /* relation bar (diplomacy) */
+  .rel-bar-track{ height:8px; border-radius:999px; background:var(--paper-raised-2); border:1px solid var(--line-soft); overflow:hidden; margin:6px 0 2px; position:relative; }
+  .rel-bar-fill{ height:100%; border-radius:999px; transition:width .3s ease; }
+  .rel-bar-fill.pos{ background:linear-gradient(90deg, var(--slime-soft), var(--slime)); }
+  .rel-bar-fill.neg{ background:linear-gradient(90deg, var(--ember), var(--ember-soft)); }
+
+  /* building / companion / diplomacy rows */
+  .row-list{ display:flex; flex-direction:column; }
+  .b-row, .c-row, .f-row{ display:grid; grid-template-columns:1fr auto; gap:8px 12px; align-items:center; padding:11px 0; border-bottom:1px solid var(--line-soft); }
+  .row-list > :last-child{ border-bottom:none; padding-bottom:0; }
+  .row-list > :first-child{ padding-top:0; }
+  .b-name, .c-name-line, .f-name-line{ display:flex; align-items:center; gap:8px; font-weight:700; font-size:.9rem; }
+  .lvl-badge{ font-family:'JetBrains Mono',monospace; font-size:.72rem; color:var(--text-muted); background:var(--paper-raised-2); border-radius:5px; padding:1px 7px; }
+  .b-desc, .c-desc, .f-desc{ grid-column:1 / -1; font-size:.76rem; color:var(--text-muted); margin-top:-2px; }
+  .f-desc b{ color:var(--text); font-family:'JetBrains Mono',monospace; }
+  .cost-line{ font-size:.72rem; color:var(--text-muted); grid-column:1/-1; }
+  .cost-line .num{ color:var(--text); }
+  .role-badge{ font-size:.68rem; padding:2px 8px; border-radius:999px; background:var(--slime-soft); color:var(--slime); font-weight:700; }
+  .c-name-input{
+    border:1px solid var(--line-soft); background:var(--paper); color:var(--text);
+    border-radius:6px; padding:5px 8px; font-size:.86rem; font-weight:700; width:8em;
+  }
+  .f-bar-wrap{ grid-column:1/-1; }
+  .f-actions{ grid-column:1/-1; display:flex; flex-wrap:wrap; gap:8px; margin-top:2px; }
+
+  /* chronicle */
+  .chronicle-panel{ margin-top:18px; }
+  .chronicle-list{ display:flex; flex-direction:column; gap:2px; max-height:260px; overflow-y:auto; padding-right:4px; }
+  .log-entry{ display:flex; gap:10px; padding:8px 4px; border-left:3px solid var(--line); font-size:.86rem; line-height:1.6; }
+  .log-entry.success{ border-color:var(--slime); }
+  .log-entry.fail{ border-color:var(--danger); }
+  .log-entry.flavor{ border-color:var(--line); }
+  .log-turn{ flex:none; font-family:'JetBrains Mono',monospace; font-size:.7rem; color:var(--text-muted); padding-top:2px; white-space:nowrap; }
+
+  .footer-links{ display:flex; justify-content:flex-end; margin-top:10px; }
+  .footer-links button{ background:none; border:none; color:var(--text-muted); font-size:.72rem; text-decoration:underline; cursor:pointer; padding:4px; }
+</style>
+
+<div class="app">
+  <header class="header">
+    <div class="title-block">
+      <h1>スライム建国記</h1>
+      <p>小さきスライムの、国盗りの記</p>
+    </div>
+    <div class="turn-controls">
+      <div class="turn-badge">経過 <span class="num" id="turnCount">1</span> 日目 ・ 発展度 <span class="num" id="devScore">0</span></div>
+      <button class="btn btn-primary" id="nextTurnBtn">次の日へ</button>
+    </div>
+  </header>
+
+  <section class="resource-bar" id="resourceBar" aria-label="所持資源"></section>
+
+  <div class="main-grid">
+    <div>
+      <div class="panel">
+        <h2>世界地図</h2>
+        <p class="sub">隣接する領地だけを、交渉か制圧で従えることができる。周辺勢力も自ら動く。</p>
+        <svg class="map-svg" id="mapSvg" viewBox="0 0 100 100" role="group" aria-label="領地マップ"></svg>
+        <div class="legend">
+          <span class="legend-item"><span class="legend-swatch" style="background:var(--slime)"></span>自国の領地</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:var(--paper-raised-2);border-color:var(--line)"></span>無所属の村</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:var(--trade-soft);border-color:var(--trade)"></span>鉄鎚商業連合</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:var(--ember-soft);border-color:var(--ember)"></span>黒曜の残党</span>
+          <span class="legend-item"><span class="legend-swatch" style="border:2px dashed var(--line)"></span>侵攻可能</span>
+        </div>
+        <div class="detail-card" id="detailCard"></div>
+      </div>
+
+      <div class="panel chronicle-panel">
+        <h2>年代記</h2>
+        <p class="sub">この国と、周辺勢力に起きた出来事の記録。</p>
+        <div class="chronicle-list" id="chronicleList"></div>
+      </div>
+    </div>
+
+    <aside>
+      <div class="panel">
+        <h2>リムルの成長</h2>
+        <p class="sub" id="evoNext"></p>
+        <div class="evo-name num" id="evoName" style="font-family:'Kaisei Decol',serif;"></div>
+        <div class="evo-bar-track"><div class="evo-bar-fill" id="evoBarFill" style="width:0%"></div></div>
+        <div class="evo-exp num" id="evoExp"></div>
+      </div>
+
+      <div class="panel">
+        <h2>外交</h2>
+        <p class="sub">周辺勢力との関係を操り、脅威を減らすか、力でねじ伏せるか。</p>
+        <div class="row-list" id="diplomacyList"></div>
+      </div>
+
+      <div class="panel">
+        <h2>本拠地の施設</h2>
+        <p class="sub">施設を強化して、生産力と交渉・制圧の力を高める。</p>
+        <div class="row-list" id="buildingList"></div>
+      </div>
+
+      <div class="panel">
+        <h2>仲間</h2>
+        <p class="sub">名前は自由に書き換えられる。鍛えるほど頼れる力になる。</p>
+        <div class="row-list" id="companionList"></div>
+      </div>
+
+      <div class="footer-links">
+        <button id="resetBtn">はじめからやり直す</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const STORAGE_KEY = "slime-nation-save-v3";
+  const HEX_SIZE = 15;
+
+  const AXIAL = [
+    [0,0],[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1],
+    [2,0],[2,-1],[1,1],[-1,2],[-2,1],[2,-2]
+  ];
+
+  // owner: "player" | null(無所属) | "ironhammer" | "obsidian"
+  const TERRITORY_DATA = [
+    {name:"始まりの森", owner:"player",     strength:0,  resource:"mana", flavor:"目覚めた洞窟から一番近い、静かな森。ここが全ての始まりだった。"},
+    {name:"陽だまりの畑", owner:null,        strength:22, resource:"food", flavor:"畑を耕す小さな集落。争いを好まず、実りを分け合う暮らしを望んでいる。"},
+    {name:"鉄鎚の街道", owner:"ironhammer",  strength:42, resource:"wood", flavor:"交易組合が街道を仕切り、通行料を取り立てている。話は通じる相手だ。"},
+    {name:"銀霜の高地", owner:null,          strength:30, resource:"mana", flavor:"万年雪の高地。魔素が薄く冷たい空気に凝っている。"},
+    {name:"涸れ川の里", owner:null,          strength:25, resource:"food", flavor:"水源を失いつつある里。助力を求めているという噂がある。"},
+    {name:"霧影の谷", owner:null,            strength:28, resource:"wood", flavor:"一年中霧が晴れない谷。木こりたちがひっそりと暮らしている。"},
+    {name:"蒼月の丘", owner:null,            strength:24, resource:"mana", flavor:"満月の夜だけ魔素が満ちる丘。近隣の信仰を集めている。"},
+    {name:"黒曜の岩窟", owner:"obsidian",    strength:50, resource:"mana", flavor:"黒曜石の魔物が巣食う岩窟。濃い魔素を独占し、外者を許さない。"},
+    {name:"風切の砦", owner:"ironhammer",    strength:38, resource:"wood", flavor:"風を操る一族が守る砦。商いのためなら融通も利く。"},
+    {name:"沼渦の底", owner:null,            strength:33, resource:"food", flavor:"沼に沈んだ集落。奇妙な魚が住民の主食になっている。"},
+    {name:"朽木の砦", owner:null,            strength:27, resource:"wood", flavor:"かつての砦の廃材が積み上がる土地。まだ使える木材が眠る。"},
+    {name:"灰塵の廃墟", owner:"obsidian",    strength:48, resource:"mana", flavor:"滅びた都市の跡。残留魔素を狙う無法者が居座っている。"},
+    {name:"終焉の荒野", owner:"obsidian",    strength:66, resource:"mana", flavor:"地図の果て。誰も従えたことのない、最も強大な脅威が眠るという。"}
+  ];
+
+  const FACTIONS_META = {
+    ironhammer:{ name:"鉄鎚商業連合", trait:"trade", traitLabel:"交易を重んじる商人気質。話し合いに応じやすいが、裏切れば商機を失う。" },
+    obsidian:  { name:"黒曜の残党",   trait:"aggressive", traitLabel:"力こそ全てと信じる好戦的な一党。放っておくと自ら牙を剥く。" }
+  };
+
+  const RESOURCE_META = {
+    mana:{label:"魔素"},
+    food:{label:"食料"},
+    wood:{label:"木材"}
+  };
+
+  const BUILDINGS_META = {
+    hall:     {name:"集落庁舎", desc:"国全体の生産効率を底上げする。", base:{mana:20,wood:20}},
+    farm:     {name:"農場",     desc:"食料の生産量を増やす。ミューが支える。", base:{food:15,wood:10}},
+    workshop: {name:"工房",     desc:"木材と魔素の生産量を増やす。ドナが支える。", base:{wood:20,mana:10}},
+    archive:  {name:"魔導書庫", desc:"魔素の生産と、交渉の力を高める。ソアレが支える。", base:{mana:25,food:10}},
+    training: {name:"訓練場",   desc:"制圧の力と守りの堅さを高める。ガロンが支える。", base:{wood:25,mana:15}}
+  };
+
+  const COMPANION_META = {
+    soare:{ role:"知恵袋", defaultName:"ソアレ", desc:"交渉の成功率を高める。" },
+    garon:{ role:"猛将",   defaultName:"ガロン", desc:"制圧の成功率と守りの力を高める。" },
+    dona: { role:"匠",     defaultName:"ドナ",   desc:"工房の生産量を高める。" },
+    myu:  { role:"牧人",   defaultName:"ミュー", desc:"農場の生産量を高める。" }
+  };
+
+  const RIMU_STAGES = [
+    {name:"名もなきスライム", need:0},
+    {name:"意思を宿すスライム", need:30},
+    {name:"森の盟主", need:80},
+    {name:"王権を纏う者", need:160},
+    {name:"終焉を統べるもの", need:280}
+  ];
+
+  const EVENTS = [
+    {text:"旅の行商人が立ち寄り、余った木材を置いていった。", type:"success", effect:s=>{ s.resources.wood+=8; }},
+    {text:"森の奥で行き倒れの魔物を助け、捕食してその力の一端を得た。", type:"success", effect:s=>{ s.exp+=6; }},
+    {text:"小さな地割れが工房を襲い、資材がいくらか失われた。", type:"fail", effect:s=>{ s.resources.wood=Math.max(0,s.resources.wood-6); }},
+    {text:"豊作の兆しが里を包み、蓄えが増えた。", type:"success", effect:s=>{ s.resources.food+=10; }},
+    {text:"国境の向こうに、怪しい影が佇んでいるとの報告が届いた。", type:"flavor", effect:s=>{}}
+  ];
+
+  const GIFT_COST = {mana:18, food:18, wood:12};
+  const CEASEFIRE_COST = {mana:24, food:16};
+  const ALLIANCE_COST = {mana:55, food:45, wood:35};
+
+  function freshState(){
+    return {
+      turn:1,
+      resources:{mana:40, food:60, wood:50},
+      exp:0,
+      territories: TERRITORY_DATA.map((t,i)=>({
+        ...t, id:i, q:AXIAL[i][0], r:AXIAL[i][1]
+      })),
+      factions:{
+        ironhammer:{ relation:15, status:"hostile", ceasefireTurns:0 },
+        obsidian:{ relation:-15, status:"hostile", ceasefireTurns:0 }
+      },
+      buildings:{hall:1, farm:1, workshop:1, archive:1, training:1},
+      companions:{
+        soare:{name:COMPANION_META.soare.defaultName, level:1},
+        garon:{name:COMPANION_META.garon.defaultName, level:1},
+        dona:{name:COMPANION_META.dona.defaultName, level:1},
+        myu:{name:COMPANION_META.myu.defaultName, level:1}
+      },
+      selected:null,
+      milestones:{m5:false, m10:false, m13:false},
+      log:[
+        {turn:1, type:"flavor", text:"霧の立ちこめる洞窟の中、小さなスライムはゆっくりと目を覚ました。ここから全てが始まる。"},
+        {turn:1, type:"flavor", text:"森の外には、交易を営む「鉄鎚商業連合」と、力を誇示する「黒曜の残党」という二つの勢力が睨みを利かせているという。"}
+      ]
+    };
+  }
+
+  let state = load() || freshState();
+
+  function save(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+  }
+  function load(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return null;
+      const parsed = JSON.parse(raw);
+      if(!parsed || !Array.isArray(parsed.territories) || parsed.territories.length!==TERRITORY_DATA.length) return null;
+      if(!parsed.factions || !parsed.factions.ironhammer || !parsed.factions.obsidian) return null;
+      return parsed;
+    }catch(e){ return null; }
+  }
+
+  function neighbors(q,r){
+    return [[q+1,r],[q+1,r-1],[q,r-1],[q-1,r],[q-1,r+1],[q,r+1]];
+  }
+  function isOwned(t){ return t.owner==="player"; }
+  function isAdjacentToOwned(t){
+    if(isOwned(t)) return false;
+    return state.territories.some(o=> isOwned(o) && neighbors(o.q,o.r).some(n=> n[0]===t.q && n[1]===t.r));
+  }
+  function cssFaction(t){
+    return t.owner==="player" ? "player" : (t.owner===null ? "neutral" : t.owner);
+  }
+  function factionLabel(t){
+    if(t.owner==="player") return "自国";
+    if(t.owner===null) return "無所属";
+    return FACTIONS_META[t.owner].name;
+  }
+  function rimuStageIndex(){
+    let idx=0;
+    RIMU_STAGES.forEach((s,i)=>{ if(state.exp>=s.need) idx=i; });
+    return idx;
+  }
+  function ownedCount(){ return state.territories.filter(isOwned).length; }
+  function developmentScore(){
+    const bLevels = Object.values(state.buildings).reduce((a,b)=>a+b,0);
+    return ownedCount()*10 + bLevels*3 + Math.floor(state.exp);
+  }
+
+  function diplomacyPower(){
+    return ownedCount()*3 + state.buildings.archive*5 + state.companions.soare.level*6 + rimuStageIndex()*8;
+  }
+  function conquestPower(){
+    return ownedCount()*3 + state.buildings.training*7 + state.companions.garon.level*6 + rimuStageIndex()*8;
+  }
+  function chance(power, strength, base){
+    return Math.max(8, Math.min(92, Math.round(base + (power-strength)*1.2)));
+  }
+  function diplomacyChanceFor(t){
+    const bonus = (t.owner && t.owner!=="player") ? state.factions[t.owner].relation*0.25 : 0;
+    return chance(diplomacyPower()+bonus, t.strength, 52);
+  }
+  function conquestChanceFor(t){
+    return chance(conquestPower(), t.strength, 46);
+  }
+  function diplomacyCost(t){
+    return { mana:Math.round(15+t.strength*0.3), food:Math.round(10+t.strength*0.2) };
+  }
+  function conquestCost(t){
+    return { wood:Math.round(15+t.strength*0.3), mana:Math.round(10+t.strength*0.2) };
+  }
+  function canAfford(cost){
+    return Object.keys(cost).every(k=> state.resources[k] >= cost[k]);
+  }
+  function pay(cost){
+    Object.keys(cost).forEach(k=> state.resources[k]-=cost[k]);
+  }
+  function costText(cost){
+    return Object.keys(cost).map(k=>`${RESOURCE_META[k].label}${cost[k]}`).join("・");
+  }
+
+  function buildingCost(key){
+    const lvl = state.buildings[key];
+    const base = BUILDINGS_META[key].base;
+    const mult = Math.pow(1.55, lvl-1);
+    const cost = {};
+    Object.keys(base).forEach(k=> cost[k]=Math.round(base[k]*mult));
+    return cost;
+  }
+  function companionCost(level){
+    return { food: 10+level*8, wood: 6+level*6 };
+  }
+
+  function productionPerTurn(){
+    const hallMult = 1 + state.buildings.hall*0.15;
+    let mana = 4 + state.buildings.archive*3;
+    let food = 5 + state.buildings.farm*3 + state.companions.myu.level*2;
+    let wood = 4 + state.buildings.workshop*3 + state.companions.dona.level*2;
+    state.territories.forEach(t=>{
+      if(isOwned(t) && t.id!==0){
+        const bonus = 2 + Math.floor(t.strength/12);
+        if(t.resource==="mana") mana+=bonus;
+        if(t.resource==="food") food+=bonus;
+        if(t.resource==="wood") wood+=bonus;
+      }
+    });
+    return {
+      mana:Math.round(mana*hallMult),
+      food:Math.round(food*hallMult),
+      wood:Math.round(wood*hallMult)
+    };
+  }
+
+  function addLog(text, type){
+    state.log.unshift({turn:state.turn, type:type||"flavor", text});
+    if(state.log.length>60) state.log.length=60;
+  }
+
+  function checkMilestones(){
+    const n = ownedCount();
+    if(n>=5 && !state.milestones.m5){ state.milestones.m5=true; addLog("近隣の地に、小さな国が生まれつつあるという噂が広がり始めた。","success"); }
+    if(n>=10 && !state.milestones.m10){ state.milestones.m10=true; addLog("もはや見過ごせぬ勢力として、この国の名が地図に記され始めた。","success"); }
+    if(n>=TERRITORY_DATA.length && !state.milestones.m13){ state.milestones.m13=true; addLog("ついに、この地図の全てが小さなスライムの旗の下に治まった。","success"); }
+  }
+
+  /* ---------- player actions: territory ---------- */
+
+  function breakProtectionIfNeeded(t){
+    if(!t.owner || t.owner==="player") return;
+    const f = state.factions[t.owner];
+    if(f.status!=="hostile"){
+      const label = f.status==="alliance" ? "同盟" : "停戦";
+      addLog(`${FACTIONS_META[t.owner].name}との${label}を自ら破り、手を出すことにした。`, "fail");
+      f.status = "hostile";
+      f.ceasefireTurns = 0;
+      f.relation = Math.max(-100, f.relation-25);
+    }
+  }
+  function adjustRelation(ownerKey, delta){
+    if(!ownerKey || ownerKey==="player") return;
+    const f = state.factions[ownerKey];
+    f.relation = Math.max(-100, Math.min(100, f.relation+delta));
+  }
+
+  function doDiplomacy(t){
+    const cost = diplomacyCost(t);
+    if(!canAfford(cost)){ addLog(`${t.name}への交渉に必要な蓄えが足りない。(${costText(cost)}が必要)`, "fail"); render(); save(); return; }
+    breakProtectionIfNeeded(t);
+    const ownerKey = t.owner;
+    pay(cost);
+    const c = diplomacyChanceFor(t);
+    if(Math.random()*100 < c){
+      t.owner = "player";
+      state.exp += 10;
+      const windfall = Math.round(t.strength*0.5);
+      state.resources[t.resource]+=windfall;
+      addLog(`${t.name}の民は、我らの申し出を受け入れ、仲間に加わった。`, "success");
+      adjustRelation(ownerKey, -8);
+      checkMilestones();
+    } else {
+      addLog(`${t.name}との交渉は決裂した。差し出した品だけが失われた。`, "fail");
+      adjustRelation(ownerKey, -3);
+    }
+    render(); save();
+  }
+
+  function doConquest(t){
+    const cost = conquestCost(t);
+    if(!canAfford(cost)){ addLog(`${t.name}への出兵に必要な蓄えが足りない。(${costText(cost)}が必要)`, "fail"); render(); save(); return; }
+    breakProtectionIfNeeded(t);
+    const ownerKey = t.owner;
+    pay(cost);
+    const c = conquestChanceFor(t);
+    if(Math.random()*100 < c){
+      t.owner = "player";
+      state.exp += 16;
+      const windfall = Math.round(t.strength*0.6);
+      state.resources[t.resource]+=windfall;
+      addLog(`${t.name}を制圧し、この地を統べる力を示した。`, "success");
+      adjustRelation(ownerKey, -25);
+      checkMilestones();
+    } else {
+      addLog(`${t.name}への侵攻は退けられ、兵と資材を失った。`, "fail");
+      adjustRelation(ownerKey, -5);
+    }
+    render(); save();
+  }
+
+  /* ---------- player actions: diplomacy with factions ---------- */
+
+  function sendGift(key){
+    if(!canAfford(GIFT_COST)) return;
+    pay(GIFT_COST);
+    const f = state.factions[key];
+    f.relation = Math.min(100, f.relation+12);
+    addLog(`${FACTIONS_META[key].name}に贈り物を届けた。関係がわずかに改善した。`, "success");
+    render(); save();
+  }
+
+  function proposeCeasefire(key){
+    if(!canAfford(CEASEFIRE_COST)) return;
+    const f = state.factions[key];
+    if(f.status!=="hostile") return;
+    pay(CEASEFIRE_COST);
+    const c = Math.max(5, Math.min(95, Math.round(35 + f.relation*0.6)));
+    if(Math.random()*100 < c){
+      f.status = "ceasefire";
+      f.ceasefireTurns = 8;
+      f.relation = Math.min(100, f.relation+8);
+      addLog(`${FACTIONS_META[key].name}との間に停戦が成立した。当面、攻め込まれる心配はない。`, "success");
+    } else {
+      f.relation = Math.min(100, f.relation+2);
+      addLog(`${FACTIONS_META[key].name}は停戦の申し出に応じなかった。まだ信頼が足りないようだ。`, "fail");
+    }
+    render(); save();
+  }
+
+  function proposeAlliance(key){
+    const f = state.factions[key];
+    if(f.status==="alliance" || f.relation<60 || !canAfford(ALLIANCE_COST)) return;
+    pay(ALLIANCE_COST);
+    const c = Math.max(10, Math.min(95, Math.round(25 + (f.relation-60)*1.6)));
+    if(Math.random()*100 < c){
+      f.status = "alliance";
+      f.relation = 100;
+      addLog(`${FACTIONS_META[key].name}と同盟を結んだ。もはや裏切らぬ限り、敵ではない。`, "success");
+    } else {
+      f.relation = Math.max(-100, f.relation-10);
+      addLog(`${FACTIONS_META[key].name}は同盟の申し出をまだ重く見ていないようだ。`, "fail");
+    }
+    render(); save();
+  }
+
+  /* ---------- building / companion ---------- */
+
+  function upgradeBuilding(key){
+    const cost = buildingCost(key);
+    if(!canAfford(cost)) return;
+    pay(cost);
+    state.buildings[key]+=1;
+    addLog(`${BUILDINGS_META[key].name}を Lv.${state.buildings[key]} に強化した。`, "success");
+    render(); save();
+  }
+
+  function trainCompanion(key){
+    const comp = state.companions[key];
+    const cost = companionCost(comp.level);
+    if(!canAfford(cost)) return;
+    pay(cost);
+    comp.level+=1;
+    addLog(`${comp.name}を鍛え、Lv.${comp.level}になった。`, "success");
+    render(); save();
+  }
+
+  function updateCompanionName(key, value){
+    const name = value.trim() || COMPANION_META[key].defaultName;
+    state.companions[key].name = name;
+    save();
+  }
+
+  function resetGame(){
+    if(!confirm("これまでの記録を消して、最初からやり直しますか?")) return;
+    state = freshState();
+    render(); save();
+  }
+
+  /* ---------- faction AI ---------- */
+
+  function factionPower(key){
+    const f = FACTIONS_META[key];
+    const owned = state.territories.filter(t=>t.owner===key);
+    if(owned.length===0) return 0;
+    const avg = owned.reduce((a,t)=>a+t.strength,0)/owned.length;
+    return avg + (f.trait==="aggressive" ? 12 : 0);
+  }
+
+  function factionAiTurn(key){
+    const f = state.factions[key];
+    if(f.status==="ceasefire"){
+      f.ceasefireTurns -= 1;
+      if(f.ceasefireTurns<=0){
+        f.status = "hostile";
+        f.relation = Math.max(-100, f.relation-10);
+        addLog(`${FACTIONS_META[key].name}との停戦が期限を迎え、再び緊張が高まっている。`, "fail");
+      }
+    }
+    // slow build-up of strength
+    state.territories.forEach(t=>{
+      if(t.owner===key && Math.random()<0.5) t.strength = Math.min(99, t.strength+1);
+    });
+
+    const actionChance = FACTIONS_META[key].trait==="aggressive" ? 0.35 : 0.18;
+    if(Math.random()>actionChance) return;
+
+    const myTerritories = state.territories.filter(t=>t.owner===key);
+    if(myTerritories.length===0) return;
+    const targets = state.territories.filter(t=>{
+      if(t.owner===key) return false;
+      return myTerritories.some(o=>neighbors(o.q,o.r).some(n=>n[0]===t.q&&n[1]===t.r));
+    }).filter(t=> t.owner!=="player" || f.status==="hostile");
+    if(targets.length===0) return;
+
+    const target = targets.reduce((a,b)=> a.strength<=b.strength ? a : b);
+    const power = factionPower(key);
+    const wasPlayer = target.owner==="player";
+    const defense = wasPlayer ? conquestPower() : target.strength;
+    const succ = Math.random()*100 < chance(power, defense, 38);
+    if(succ){
+      target.owner = key;
+      target.strength = Math.max(target.strength, Math.round(power*0.85));
+      if(wasPlayer){
+        addLog(`${FACTIONS_META[key].name}の侵攻を受け、${target.name}を奪われてしまった。`, "fail");
+      } else {
+        addLog(`${FACTIONS_META[key].name}が${target.name}を勢力下に収めた。`, "flavor");
+      }
+    }
+  }
+
+  function allianceIncome(){
+    Object.keys(state.factions).forEach(key=>{
+      if(state.factions[key].status==="alliance"){
+        const owned = state.territories.filter(t=>t.owner===key);
+        const resType = owned.length ? owned[0].resource : "mana";
+        state.resources[resType] += 4;
+      }
+    });
+  }
+
+  function nextTurn(){
+    const prod = productionPerTurn();
+    state.resources.mana+=prod.mana;
+    state.resources.food+=prod.food;
+    state.resources.wood+=prod.wood;
+    const prevStage = rimuStageIndex();
+    state.exp+=1;
+    state.turn+=1;
+
+    Object.keys(state.factions).forEach(factionAiTurn);
+    allianceIncome();
+
+    if(Math.random()<0.3){
+      const ev = EVENTS[Math.floor(Math.random()*EVENTS.length)];
+      ev.effect(state);
+      addLog(ev.text, ev.type);
+    }
+
+    if(rimuStageIndex()>prevStage){
+      addLog(`力が満ち、「${RIMU_STAGES[rimuStageIndex()].name}」へと進化を遂げた。`, "success");
+    }
+    checkMilestones();
+    render();
+    save();
+  }
+
+  function selectTerritory(id){
+    state.selected = state.selected===id ? null : id;
+    renderMap();
+    renderDetail();
+  }
+
+  /* ---------- rendering ---------- */
+
+  function axialToPixel(q,r){
+    return { x: HEX_SIZE*Math.sqrt(3)*(q+r/2), y: HEX_SIZE*1.5*r };
+  }
+  function hexPoints(cx,cy,size){
+    const pts=[];
+    for(let i=0;i<6;i++){
+      const ang = Math.PI/180*(60*i-30);
+      pts.push((cx+size*Math.cos(ang)).toFixed(2)+","+(cy+size*Math.sin(ang)).toFixed(2));
+    }
+    return pts.join(" ");
+  }
+
+  function renderResources(){
+    const prod = productionPerTurn();
+    const bar = document.getElementById("resourceBar");
+    const tiles = [
+      {key:"mana", val:state.resources.mana, delta:prod.mana},
+      {key:"food", val:state.resources.food, delta:prod.food},
+      {key:"wood", val:state.resources.wood, delta:prod.wood}
+    ];
+    let html = tiles.map(t=>`
+      <div class="res-tile">
+        <div class="res-label">${RESOURCE_META[t.key].label}</div>
+        <div class="res-value num">${t.val}</div>
+        <div class="res-delta num">+${t.delta} /日</div>
+      </div>
+    `).join("");
+    html += `
+      <div class="res-tile">
+        <div class="res-label">発展度</div>
+        <div class="res-value num">${developmentScore()}</div>
+        <div class="res-delta num">${ownedCount()} / ${TERRITORY_DATA.length} 領地</div>
+      </div>
+    `;
+    bar.innerHTML = html;
+    document.getElementById("turnCount").textContent = state.turn;
+    document.getElementById("devScore").textContent = developmentScore();
+  }
+
+  function renderMap(){
+    const svg = document.getElementById("mapSvg");
+    const pts = state.territories.map(t=>{
+      const p = axialToPixel(t.q,t.r);
+      return {...t, px:p.x, py:p.y};
+    });
+    const xs = pts.map(p=>p.px), ys = pts.map(p=>p.py);
+    const pad = HEX_SIZE*1.4;
+    const minX = Math.min(...xs)-pad, maxX = Math.max(...xs)+pad;
+    const minY = Math.min(...ys)-pad, maxY = Math.max(...ys)+pad;
+    svg.setAttribute("viewBox", `${minX} ${minY} ${maxX-minX} ${maxY-minY}`);
+
+    svg.innerHTML = pts.map(t=>{
+      const actionable = isAdjacentToOwned(t);
+      const classes = ["hex"];
+      if(!isOwned(t) && !actionable) classes.push("inert");
+      if(actionable) classes.push("actionable");
+      if(state.selected===t.id) classes.push("selected");
+      const homeMark = t.id===0 ? `<circle class="hex-home-mark" cx="${t.px}" cy="${t.py-5}" r="2.4"></circle>` : "";
+      return `
+        <g tabindex="0" role="button" aria-label="${t.name}" data-id="${t.id}" class="hex-wrap">
+          <polygon class="${classes.join(' ')}" data-faction="${cssFaction(t)}"
+            points="${hexPoints(t.px,t.py,HEX_SIZE*0.9)}"></polygon>
+          ${homeMark}
+          <text class="hex-label" x="${t.px}" y="${t.py+6}">${t.name}</text>
+        </g>
+      `;
+    }).join("");
+
+    svg.querySelectorAll("[data-id]").forEach(el=>{
+      el.addEventListener("click", ()=> selectTerritory(parseInt(el.getAttribute("data-id"),10)));
+      el.addEventListener("keydown", (e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); selectTerritory(parseInt(el.getAttribute("data-id"),10)); }});
+    });
+  }
+
+  function renderDetail(){
+    const card = document.getElementById("detailCard");
+    if(state.selected===null){
+      card.innerHTML = `<p class="note">地図の領地をクリックすると、詳しい様子が分かる。</p>`;
+      return;
+    }
+    const t = state.territories[state.selected];
+    let body = `
+      <div class="detail-head">
+        <h3>${t.name}</h3>
+        <span class="faction-tag ${cssFaction(t)}">${factionLabel(t)}</span>
+      </div>
+      <p class="detail-flavor">${t.flavor}</p>
+      <div class="detail-stats">
+        <span>勢力の強さ <b class="num">${isOwned(t) ? "―" : t.strength}</b></span>
+        <span>特産 <b>${RESOURCE_META[t.resource].label}</b></span>
+      </div>
+    `;
+    if(isOwned(t)){
+      body += `<p class="note">${t.id===0 ? "国の礎となる本拠地。" : "既に我らが治める土地だ。"}</p>`;
+    } else if(!isAdjacentToOwned(t)){
+      body += `<p class="note">まだ国境が接していない。隣接する領地を先に治めよう。</p>`;
+    } else {
+      const dCost = diplomacyCost(t), cCost = conquestCost(t);
+      const dChance = diplomacyChanceFor(t), cChance = conquestChanceFor(t);
+      const dAfford = canAfford(dCost), cAfford = canAfford(cCost);
+      const protectedStatus = (t.owner && t.owner!=="player" && state.factions[t.owner].status!=="hostile")
+        ? state.factions[t.owner].status : null;
+      if(protectedStatus){
+        const label = protectedStatus==="alliance" ? "同盟" : "停戦";
+        body += `<p class="warn-note">今は${FACTIONS_META[t.owner].name}と${label}中。手を出せば、その関係は崩れる。</p>`;
+      }
+      body += `
+        <div class="action-row">
+          <button class="action-btn" id="btnDiplomacy" ${dAfford?"":"disabled"}>
+            <strong>交渉で迎え入れる <span class="chance">${dChance}%</span></strong>
+            <span>費用: ${costText(dCost)}</span>
+          </button>
+          <button class="action-btn" id="btnConquest" ${cAfford?"":"disabled"}>
+            <strong>制圧して従える <span class="chance">${cChance}%</span></strong>
+            <span>費用: ${costText(cCost)}</span>
+          </button>
+        </div>
+      `;
+    }
+    card.innerHTML = body;
+    const dBtn = document.getElementById("btnDiplomacy");
+    const cBtn = document.getElementById("btnConquest");
+    if(dBtn) dBtn.addEventListener("click", ()=>doDiplomacy(t));
+    if(cBtn) cBtn.addEventListener("click", ()=>doConquest(t));
+  }
+
+  function renderEvolution(){
+    const idx = rimuStageIndex();
+    const stage = RIMU_STAGES[idx];
+    const next = RIMU_STAGES[idx+1];
+    document.getElementById("evoName").textContent = stage.name;
+    if(next){
+      const span = next.need - stage.need;
+      const progressed = state.exp - stage.need;
+      const pct = Math.max(0, Math.min(100, Math.round(progressed/span*100)));
+      document.getElementById("evoBarFill").style.width = pct+"%";
+      document.getElementById("evoExp").textContent = `経験 ${state.exp} / ${next.need}`;
+      document.getElementById("evoNext").textContent = `次の姿:「${next.name}」`;
+    } else {
+      document.getElementById("evoBarFill").style.width = "100%";
+      document.getElementById("evoExp").textContent = `経験 ${state.exp}`;
+      document.getElementById("evoNext").textContent = `到達しうる最も遠い姿`;
+    }
+  }
+
+  function renderDiplomacyPanel(){
+    const list = document.getElementById("diplomacyList");
+    list.innerHTML = Object.keys(FACTIONS_META).map(key=>{
+      const meta = FACTIONS_META[key];
+      const f = state.factions[key];
+      const remaining = state.territories.filter(t=>t.owner===key).length;
+      const pct = Math.round((f.relation+100)/2);
+      const statusLabel = f.status==="hostile" ? "敵対中" : (f.status==="ceasefire" ? `停戦中(残り${f.ceasefireTurns}日)` : "同盟中");
+      const canGift = canAfford(GIFT_COST);
+      const canCeasefire = f.status==="hostile" && canAfford(CEASEFIRE_COST);
+      const canAlliance = f.status!=="alliance" && f.relation>=60 && canAfford(ALLIANCE_COST);
+      return `
+        <div class="f-row">
+          <div class="f-name-line">${meta.name} <span class="lvl-badge num">${remaining}領地</span></div>
+          <span class="faction-tag status-${f.status}">${statusLabel}</span>
+          <div class="f-desc">${meta.traitLabel}</div>
+          <div class="f-desc">関係値 <b class="num">${f.relation}</b></div>
+          <div class="f-bar-wrap"><div class="rel-bar-track"><div class="rel-bar-fill ${f.relation>=0?'pos':'neg'}" style="width:${pct}%"></div></div></div>
+          <div class="f-actions">
+            <button class="btn-small" data-gift="${key}" ${canGift?"":"disabled"}>贈り物を送る</button>
+            <button class="btn-small" data-ceasefire="${key}" ${canCeasefire?"":"disabled"}>停戦を申し入れる</button>
+            <button class="btn-small" data-alliance="${key}" ${canAlliance?"":"disabled"}>同盟を結ぶ</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+    list.querySelectorAll("[data-gift]").forEach(b=>b.addEventListener("click", ()=>sendGift(b.getAttribute("data-gift"))));
+    list.querySelectorAll("[data-ceasefire]").forEach(b=>b.addEventListener("click", ()=>proposeCeasefire(b.getAttribute("data-ceasefire"))));
+    list.querySelectorAll("[data-alliance]").forEach(b=>b.addEventListener("click", ()=>proposeAlliance(b.getAttribute("data-alliance"))));
+  }
+
+  function renderBuildings(){
+    const list = document.getElementById("buildingList");
+    list.innerHTML = Object.keys(BUILDINGS_META).map(key=>{
+      const meta = BUILDINGS_META[key];
+      const lvl = state.buildings[key];
+      const cost = buildingCost(key);
+      const afford = canAfford(cost);
+      return `
+        <div class="b-row">
+          <div class="b-name">${meta.name} <span class="lvl-badge num">Lv.${lvl}</span></div>
+          <button class="btn-small" data-build="${key}" ${afford?"":"disabled"}>強化する</button>
+          <div class="b-desc">${meta.desc}</div>
+          <div class="cost-line">費用: ${costText(cost)}</div>
+        </div>
+      `;
+    }).join("");
+    list.querySelectorAll("[data-build]").forEach(btn=>{
+      btn.addEventListener("click", ()=>upgradeBuilding(btn.getAttribute("data-build")));
+    });
+  }
+
+  function renderCompanions(){
+    const list = document.getElementById("companionList");
+    list.innerHTML = Object.keys(COMPANION_META).map(key=>{
+      const meta = COMPANION_META[key];
+      const comp = state.companions[key];
+      const cost = companionCost(comp.level);
+      const afford = canAfford(cost);
+      return `
+        <div class="c-row">
+          <div class="c-name-line">
+            <input class="c-name-input" data-name="${key}" value="${comp.name}" maxlength="10" aria-label="${meta.role}の名前">
+            <span class="lvl-badge num">Lv.${comp.level}</span>
+          </div>
+          <button class="btn-small" data-train="${key}" ${afford?"":"disabled"}>鍛える</button>
+          <div class="c-desc"><span class="role-badge">${meta.role}</span> ${meta.desc}</div>
+          <div class="cost-line">費用: ${costText(cost)}</div>
+        </div>
+      `;
+    }).join("");
+    list.querySelectorAll("[data-name]").forEach(inp=>{
+      inp.addEventListener("input", ()=>updateCompanionName(inp.getAttribute("data-name"), inp.value));
+    });
+    list.querySelectorAll("[data-train]").forEach(btn=>{
+      btn.addEventListener("click", ()=>trainCompanion(btn.getAttribute("data-train")));
+    });
+  }
+
+  function renderChronicle(){
+    const list = document.getElementById("chronicleList");
+    list.innerHTML = state.log.map(e=>`
+      <div class="log-entry ${e.type}">
+        <span class="log-turn">第${e.turn}日</span>
+        <span>${e.text}</span>
+      </div>
+    `).join("");
+  }
+
+  function render(){
+    renderResources();
+    renderMap();
+    renderDetail();
+    renderEvolution();
+    renderDiplomacyPanel();
+    renderBuildings();
+    renderCompanions();
+    renderChronicle();
+  }
+
+  document.getElementById("nextTurnBtn").addEventListener("click", nextTurn);
+  document.getElementById("resetBtn").addEventListener("click", resetGame);
+
+  render();
+})();
+</script>

@@ -1,0 +1,1109 @@
+<title>そだてもん</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Zen+Maru+Gothic:wght@400;500;700&display=swap');
+
+  :root{
+    --paper:#f5f0e1;
+    --paper-line:#cfd3bf;
+    --ink:#2b2620;
+    --ink-soft:#6b6355;
+    --panel:#fffdf6;
+    --rule:#d8d2bd;
+    --accent:#b1402a;
+    --accent-ink:#fffaf0;
+    --growth:#5c7a52;
+    --growth-soft:#dfe8d6;
+    --gold:#b6892f;
+    --eng:#3f5583;
+    --math:#a2672b;
+    --soc:#3f7a52;
+    --shadow-c: 43 38 32;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#201e19;
+      --paper-line:#3a362c;
+      --ink:#ece6d6;
+      --ink-soft:#a89e88;
+      --panel:#2a2720;
+      --rule:#423d31;
+      --accent:#e07350;
+      --accent-ink:#241208;
+      --growth:#7fa06e;
+      --growth-soft:#33402c;
+      --gold:#d6ac57;
+      --eng:#8fa2d6;
+      --math:#d6a35f;
+      --soc:#7fbd8c;
+      --shadow-c: 0 0 0;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#201e19;
+    --paper-line:#3a362c;
+    --ink:#ece6d6;
+    --ink-soft:#a89e88;
+    --panel:#2a2720;
+    --rule:#423d31;
+    --accent:#e07350;
+    --accent-ink:#241208;
+    --growth:#7fa06e;
+    --growth-soft:#33402c;
+    --gold:#d6ac57;
+    --eng:#8fa2d6;
+    --math:#d6a35f;
+    --soc:#7fbd8c;
+    --shadow-c: 0 0 0;
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    background:
+      linear-gradient(var(--paper-line) 1px, transparent 1px) 0 0/100% 28px,
+      linear-gradient(90deg, var(--paper-line) 1px, transparent 1px) 0 0/28px 100%,
+      var(--paper);
+    background-attachment:local;
+    color:var(--ink);
+    font-family:'Zen Maru Gothic','Hiragino Maru Gothic ProN',sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{ text-wrap:balance; margin:0; }
+  .display{ font-family:'Yuji Syuku','Zen Maru Gothic',serif; }
+  button{ font-family:inherit; }
+  :focus-visible{ outline:3px solid var(--gold); outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:0.001ms !important; transition-duration:0.001ms !important; }
+  }
+
+  .page{ max-width:980px; margin:0 auto; padding:28px 20px 60px; }
+
+  .masthead{
+    display:flex; align-items:baseline; justify-content:space-between;
+    gap:12px; padding-bottom:14px; border-bottom:2px solid var(--rule);
+    margin-bottom:22px; flex-wrap:wrap;
+  }
+  .masthead h1{ font-size:clamp(28px,4vw,38px); letter-spacing:.02em; }
+  .masthead .stamp-mark{
+    display:inline-block; color:var(--accent); border:2.5px solid var(--accent);
+    border-radius:50%; width:1.5em; height:1.5em; line-height:1.4em;
+    text-align:center; font-size:.55em; transform:rotate(-8deg);
+    margin-left:8px; vertical-align:middle;
+  }
+  .masthead .sub{ font-size:13px; color:var(--ink-soft); letter-spacing:.04em; }
+
+  .layout{ display:grid; grid-template-columns:300px 1fr; gap:22px; align-items:start; }
+  @media (max-width:760px){ .layout{ grid-template-columns:1fr; } }
+
+  .obs-card{
+    background:var(--panel); border:1px solid var(--rule); border-radius:10px;
+    padding:18px; box-shadow:0 1px 0 rgba(var(--shadow-c)/.06);
+    position:sticky; top:20px;
+  }
+  @media (max-width:760px){ .obs-card{ position:static; } }
+
+  .obs-label{ font-size:11px; letter-spacing:.14em; color:var(--ink-soft); text-transform:uppercase; margin-bottom:2px; }
+  .obs-name{ font-family:'Yuji Syuku',serif; font-size:26px; margin-bottom:10px; }
+
+  .creature-stage{ display:flex; justify-content:center; padding:6px 0 4px; }
+  .creature-stage svg{ width:180px; height:150px; overflow:visible; }
+  .creature{ animation:bob 3.6s ease-in-out infinite; transform-origin:100px 150px; }
+  @keyframes bob{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-4px); } }
+
+  .c-shadow{ fill:rgba(var(--shadow-c)/.14); }
+  .c-egg{ fill:var(--growth-soft); stroke:var(--growth); stroke-width:2; }
+  .c-crack{ stroke:var(--growth); stroke-width:2.4; stroke-linecap:round; }
+  .c-torso{ fill:var(--growth-soft); stroke:var(--growth); stroke-width:2.2; transition:transform .3s; }
+  .c-eye{ fill:var(--ink); }
+  .c-mouth{ stroke:var(--ink); stroke-width:2.2; stroke-linecap:round; }
+  .c-cheek{ fill:var(--accent); opacity:.35; }
+  .c-leaf path{ fill:var(--growth); }
+  .c-crown path{ fill:var(--gold); }
+
+  .creature[data-stage="0"] .c-body{ display:none; }
+  .creature[data-stage="0"] .c-egg{ display:block; }
+  .creature:not([data-stage="0"]) .c-egg{ display:none; }
+  .creature[data-stage="1"] .c-torso{ transform:scale(.82); }
+  .creature[data-stage="2"] .c-torso{ transform:scale(.94); }
+  .creature[data-stage="3"] .c-torso{ transform:scale(1.02); }
+  .creature[data-stage="4"] .c-torso{ transform:scale(1.1); }
+  .c-leaf2,.c-leaf3,.c-crown{ display:none; }
+  .creature[data-stage="2"] .c-leaf2,.creature[data-stage="3"] .c-leaf2,.creature[data-stage="4"] .c-leaf2{ display:block; }
+  .creature[data-stage="3"] .c-leaf3,.creature[data-stage="4"] .c-leaf3{ display:block; }
+  .creature[data-stage="4"] .c-crown{ display:block; }
+
+  .stage-caption{ text-align:center; font-size:12.5px; color:var(--ink-soft); margin-top:2px; }
+
+  .exp-row{ margin-top:14px; }
+  .exp-row .meta{ display:flex; justify-content:space-between; font-size:12px; color:var(--ink-soft); margin-bottom:4px; font-variant-numeric:tabular-nums; }
+  .exp-track{ height:9px; border-radius:5px; background:var(--growth-soft); border:1px solid var(--rule); overflow:hidden; }
+  .exp-fill{ height:100%; background:linear-gradient(90deg,var(--growth),var(--gold)); transition:width .4s ease; border-radius:5px; }
+
+  .stats-grid{ margin-top:16px; display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat{ border-top:1px solid var(--rule); padding-top:6px; }
+  .stat .n{ font-variant-numeric:tabular-nums; font-size:19px; font-weight:700; }
+  .stat .l{ font-size:11px; color:var(--ink-soft); }
+
+  .stamp-log{ margin-top:16px; }
+  .stamp-log .obs-label{ margin-bottom:6px; }
+  .stamp-row{ display:flex; gap:6px; overflow-x:auto; padding:4px 2px 8px; }
+  .stamp{
+    flex:0 0 auto; width:30px; height:30px; border:2.5px solid var(--accent); color:var(--accent);
+    border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:700; font-family:'Yuji Syuku',serif;
+  }
+  .stamp.empty{ border-style:dashed; border-color:var(--rule); color:var(--rule); }
+  .stamp-pop{ animation:pop .35s ease; }
+  @keyframes pop{ 0%{ transform:scale(.3) rotate(-25deg); opacity:0;} 70%{ transform:scale(1.15) rotate(-8deg);} 100%{ transform:scale(1) rotate(-8deg);} }
+
+  .quiz-wrap{ display:flex; gap:0; }
+  .tabs{ display:flex; flex-direction:column; gap:8px; padding-top:30px; }
+  @media (max-width:760px){ .quiz-wrap{ flex-direction:column; } .tabs{ flex-direction:row; padding-top:0; margin-bottom:10px; overflow-x:auto; } }
+  .tab{
+    border:1px solid var(--rule); border-right:none; background:var(--panel); color:var(--ink-soft);
+    padding:9px 10px; font-size:12.5px; letter-spacing:.03em; border-radius:8px 0 0 8px;
+    cursor:pointer; text-align:right; white-space:nowrap;
+  }
+  @media (max-width:760px){ .tab{ border-right:1px solid var(--rule); border-bottom:none; border-radius:8px 8px 0 0; text-align:center; } }
+  .tab[aria-selected="true"]{ color:var(--ink); font-weight:700; box-shadow:inset 3px 0 0 var(--tab-c,var(--accent)); }
+  .tab[data-k="all"]{ --tab-c:var(--accent); }
+  .tab[data-k="eng"]{ --tab-c:var(--eng); }
+  .tab[data-k="math"]{ --tab-c:var(--math); }
+  .tab[data-k="soc"]{ --tab-c:var(--soc); }
+
+  .notebook{ flex:1; background:var(--panel); border:1px solid var(--rule); border-radius:0 10px 10px 10px; padding:22px; min-height:360px; }
+  @media (max-width:760px){ .notebook{ border-radius:0 0 10px 10px; } }
+
+  .chip-row{ display:flex; gap:8px; overflow-x:auto; padding-bottom:12px; margin-bottom:12px; }
+  .chip-row.with-rule{ border-bottom:1px dashed var(--rule); }
+  .chip-row[hidden]{ display:none; }
+  .chip-row-label{ flex:0 0 auto; font-size:11px; letter-spacing:.1em; color:var(--ink-soft); align-self:center; text-transform:uppercase; padding-right:2px; }
+  .unit-chip{
+    flex:0 0 auto; border:1.5px solid var(--rule); background:transparent; color:var(--ink-soft);
+    padding:6px 13px; border-radius:20px; font-size:12.5px; cursor:pointer; white-space:nowrap;
+  }
+  .unit-chip[aria-pressed="true"]{
+    border-color:var(--chip-c,var(--accent)); color:var(--ink);
+    background:color-mix(in srgb, var(--chip-c,var(--accent)) 14%, transparent); font-weight:700;
+  }
+
+  .qhead{ display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ink-soft); margin-bottom:10px; flex-wrap:wrap; }
+  .qhead .chip{ font-size:11px; border:1px solid var(--rule); border-radius:20px; padding:2px 9px; color:var(--ink); font-weight:700; }
+  .qtext{ font-size:20px; line-height:1.5; margin:6px 0 18px; padding-left:14px; border-left:3px solid var(--rule); }
+
+  .choices{ display:grid; gap:10px; }
+  .choice{
+    text-align:left; padding:13px 16px; border:1.5px solid var(--rule); border-radius:9px;
+    background:transparent; color:var(--ink); font-size:15.5px; cursor:pointer;
+    transition:background .15s, border-color .15s, transform .1s;
+  }
+  .choice:hover:not(:disabled){ border-color:var(--accent); }
+  .choice:active:not(:disabled){ transform:scale(.99); }
+  .choice:disabled{ cursor:default; }
+  .choice.correct{ border-color:var(--growth); background:var(--growth-soft); font-weight:700; }
+  .choice.wrong{ border-color:var(--accent); background:color-mix(in srgb, var(--accent) 14%, transparent); }
+
+  .feedback{ margin-top:16px; padding:12px 14px; border-radius:9px; font-size:14.5px; display:none; flex-direction:column; gap:8px; }
+  .feedback.show{ display:flex; }
+  .feedback.ok{ background:var(--growth-soft); color:var(--ink); }
+  .feedback.ng{ background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--ink); }
+  .feedback .fline{ display:flex; align-items:center; gap:10px; }
+  .feedback .fstamp{
+    flex:0 0 auto; width:26px;height:26px;border-radius:50%; border:2px solid currentColor;
+    display:flex;align-items:center;justify-content:center; font-family:'Yuji Syuku',serif; font-size:12px;
+  }
+  .feedback .explain{ font-size:13px; color:var(--ink-soft); padding-left:36px; line-height:1.6; }
+  .feedback .explain b{ color:var(--ink); font-weight:700; letter-spacing:.06em; }
+
+  .next-btn{
+    margin-top:16px; background:var(--accent); color:var(--accent-ink); border:none;
+    padding:11px 22px; border-radius:8px; font-size:14.5px; font-weight:700; cursor:pointer; display:none;
+  }
+  .next-btn.show{ display:inline-flex; align-items:center; gap:6px; }
+  .next-btn:hover{ filter:brightness(1.06); }
+
+  .evolve-toast{
+    position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px);
+    background:var(--ink); color:var(--paper); padding:12px 20px; border-radius:10px; font-size:14px;
+    opacity:0; transition:opacity .3s, transform .3s; pointer-events:none; text-align:center;
+  }
+  .evolve-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  .addq{ margin-top:24px; border-top:1px dashed var(--rule); padding-top:14px; }
+  .addq summary{ cursor:pointer; font-size:13px; color:var(--ink-soft); letter-spacing:.03em; }
+  .addq-form{ margin-top:12px; display:grid; gap:8px; max-width:520px; }
+  .addq-row{ display:flex; gap:10px; flex-wrap:wrap; }
+  .addq-row > div{ flex:1; min-width:120px; display:flex; flex-direction:column; gap:4px; }
+  .addq-form input[type="text"], .addq-form select{
+    font-family:inherit; font-size:14px; padding:8px 10px; border:1px solid var(--rule);
+    border-radius:6px; background:var(--paper); color:var(--ink);
+  }
+  .addq-choice{ display:flex; align-items:center; gap:8px; }
+  .addq-choice input[type="text"]{ flex:1; }
+  .addq-form button{
+    justify-self:start; background:transparent; border:1.5px solid var(--growth); color:var(--growth);
+    padding:8px 16px; border-radius:7px; font-weight:700; cursor:pointer; font-size:13.5px;
+  }
+  .addq-note{ font-size:11.5px; color:var(--ink-soft); }
+
+  .custom-list{ margin-top:20px; max-width:600px; }
+  .custom-list-head{ font-size:11px; letter-spacing:.1em; color:var(--ink-soft); text-transform:uppercase; margin-bottom:8px; }
+  .custom-items{ display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto; }
+  .custom-item{
+    display:flex; align-items:center; gap:10px; border:1px solid var(--rule); border-radius:8px;
+    padding:8px 10px; font-size:12.5px;
+  }
+  .custom-item .meta{ flex:0 0 auto; color:var(--ink-soft); font-size:11px; white-space:nowrap; }
+  .custom-item .txt{ flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .custom-item .del{
+    flex:0 0 auto; width:22px; height:22px; border-radius:50%; border:1.5px solid var(--accent);
+    color:var(--accent); background:transparent; cursor:pointer; font-size:12px; line-height:1;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .custom-item .del:hover{ background:color-mix(in srgb, var(--accent) 16%, transparent); }
+  .custom-empty{ font-size:12.5px; color:var(--ink-soft); }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <h1 class="display">そだてもん<span class="stamp-mark">合</span></h1>
+      <div class="sub">自由研究ノート風・学習育成ゲーム（小6復習〜中3対応）</div>
+    </div>
+    <div class="sub">えいご ／ すうがく ／ しゃかい・りか</div>
+  </header>
+
+  <div class="layout">
+
+    <aside class="obs-card">
+      <div class="obs-label">観察カード No.01</div>
+      <div class="obs-name" id="stageName">たまご</div>
+
+      <div class="creature-stage">
+        <svg class="creature" id="creature" data-stage="0" viewBox="0 0 200 160" role="img" aria-label="そだてもんのすがた">
+          <ellipse class="c-shadow" cx="100" cy="150" rx="52" ry="9"></ellipse>
+          <g class="c-egg">
+            <path d="M100 38 C132 38 147 80 147 110 C147 138 126 150 100 150 C74 150 53 138 53 110 C53 80 68 38 100 38 Z"></path>
+            <path class="c-crack" d="M84 68 L96 84 L88 96 L102 114" fill="none"></path>
+          </g>
+          <g class="c-body">
+            <g class="c-leaf c-leaf2"><path d="M74 80 C58 72 52 56 58 42 C71 52 79 64 74 80 Z"></path></g>
+            <g class="c-leaf c-leaf3"><path d="M126 80 C142 72 148 56 142 42 C129 52 121 64 126 80 Z"></path></g>
+            <g class="c-crown">
+              <path d="M100 40 C93 26 96 14 105 6 C106 20 104 32 100 40 Z"></path>
+              <path d="M82 46 C70 36 66 22 72 10 C82 20 88 34 82 46 Z"></path>
+              <path d="M118 46 C130 36 134 22 128 10 C118 20 112 34 118 46 Z"></path>
+            </g>
+            <g class="c-leaf c-leaf1"><path d="M100 66 C90 48 96 32 110 24 C108 42 106 58 100 66 Z"></path></g>
+            <ellipse class="c-torso" cx="100" cy="110" rx="46" ry="40"></ellipse>
+            <circle class="c-eye" cx="84" cy="102" r="5.5"></circle>
+            <circle class="c-eye" cx="116" cy="102" r="5.5"></circle>
+            <ellipse class="c-cheek" cx="76" cy="114" rx="7" ry="5"></ellipse>
+            <ellipse class="c-cheek" cx="124" cy="114" rx="7" ry="5"></ellipse>
+            <path class="c-mouth" d="M90 120 Q100 128 110 120" fill="none"></path>
+          </g>
+        </svg>
+      </div>
+      <div class="stage-caption" id="stageCaption">問題に答えると、うまれるよ</div>
+
+      <div class="exp-row">
+        <div class="meta"><span>けいけんち</span><span id="expText">0 / 15</span></div>
+        <div class="exp-track"><div class="exp-fill" id="expFill" style="width:0%"></div></div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat"><div class="n" id="statCorrect">0</div><div class="l">せいかい数</div></div>
+        <div class="stat"><div class="n" id="statTotal">0</div><div class="l">かいとう数</div></div>
+        <div class="stat"><div class="n" id="statStreak">0</div><div class="l">れんぞく正解</div></div>
+        <div class="stat"><div class="n" id="statRate">0%</div><div class="l">せいかい率</div></div>
+      </div>
+
+      <div class="stamp-log">
+        <div class="obs-label">きょうのスタンプ</div>
+        <div class="stamp-row" id="stampRow"></div>
+      </div>
+    </aside>
+
+    <div class="quiz-wrap">
+      <div class="tabs" role="tablist" aria-label="教科をえらぶ">
+        <button class="tab" role="tab" data-k="all" aria-selected="true">全教科<br>ミックス</button>
+        <button class="tab" role="tab" data-k="eng" aria-selected="false">英単語</button>
+        <button class="tab" role="tab" data-k="math" aria-selected="false">数学</button>
+        <button class="tab" role="tab" data-k="soc" aria-selected="false">社会・理科</button>
+      </div>
+
+      <div class="notebook">
+        <div class="chip-row with-rule" id="gradeRow"></div>
+        <div class="chip-row with-rule" id="unitRow" hidden></div>
+
+        <div class="qhead">
+          <span class="chip" id="subjectChip">全教科</span>
+          <span>ノート p.<span id="qIndex">1</span></span>
+        </div>
+        <div class="qtext" id="qText">読みこみ中…</div>
+        <div class="choices" id="choices"></div>
+
+        <div class="feedback" id="feedback">
+          <div class="fline"><span class="fstamp" id="fstamp">合</span><span id="feedbackText"></span></div>
+          <div class="explain" id="explainText"></div>
+        </div>
+
+        <button class="next-btn" id="nextBtn">つぎの問題へ ▶</button>
+
+        <details class="addq">
+          <summary>＋ じぶんの問題をノートに追加する</summary>
+          <form class="addq-form" id="addqForm">
+            <div class="addq-row">
+              <div>
+                <label class="addq-note">教科</label>
+                <select id="addqSubject">
+                  <option value="eng">英単語</option>
+                  <option value="math">数学</option>
+                  <option value="soc">社会・理科</option>
+                </select>
+              </div>
+              <div>
+                <label class="addq-note">学年</label>
+                <select id="addqGrade">
+                  <option value="小6">小6（復習）</option>
+                  <option value="中1">中1</option>
+                  <option value="中2">中2</option>
+                  <option value="中3">中3</option>
+                </select>
+              </div>
+              <div>
+                <label class="addq-note">単元</label>
+                <select id="addqUnit"></select>
+              </div>
+            </div>
+            <label class="addq-note">問題文</label>
+            <input type="text" id="addqText" placeholder="例：光合成が行われる場所は？" required>
+            <label class="addq-note">選択肢（1つ目が正解になります・表示順はシャッフルされます）</label>
+            <div class="addq-choice"><input type="text" placeholder="正解の選択肢" required></div>
+            <div class="addq-choice"><input type="text" placeholder="選択肢2" required></div>
+            <div class="addq-choice"><input type="text" placeholder="選択肢3" required></div>
+            <div class="addq-choice"><input type="text" placeholder="選択肢4" required></div>
+            <label class="addq-note">かんたんな解説（省略可）</label>
+            <input type="text" id="addqExplain" placeholder="例：光合成は葉緑体で行われる">
+            <button type="submit">ノートに追加</button>
+            <span class="addq-note" id="addqMsg"></span>
+          </form>
+
+          <div class="custom-list">
+            <div class="custom-list-head">追加した問題（けせます）</div>
+            <div class="custom-items" id="customItems"></div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="evolve-toast" id="evolveToast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STAGES = [
+    { name:"たまご", need:0, caption:"問題に答えると、うまれるよ" },
+    { name:"めばえ", need:15, caption:"小さな芽が出てきた" },
+    { name:"わかば", need:40, caption:"葉っぱが増えてきた" },
+    { name:"わかぎ", need:80, caption:"すこし逞しくなってきた" },
+    { name:"たいじゅ", need:140, caption:"知識の樹に育った" }
+  ];
+
+  var SUBJECT_LABEL = { all:"全教科", eng:"英単語", math:"数学", soc:"社会・理科" };
+  var GRADES = ["小6","中1","中2","中3"];
+  var GRADE_LABEL = { "小6":"小6（復習）", "中1":"中1", "中2":"中2", "中3":"中3" };
+
+  var BANK = {
+    eng: {
+      "小6": {
+        "基本の単語": [
+          ["“dog” の意味は？", ["犬","猫","鳥","魚"], "dog＝犬。"],
+          ["“apple” の意味は？", ["りんご","みかん","バナナ","ぶどう"], "apple＝りんご。"],
+          ["“school” の意味は？", ["学校","家","公園","病院"], "school＝学校。"],
+          ["“happy” の意味は？", ["幸せな・嬉しい","悲しい","怒った","眠い"], "happyは「うれしい」気持ちを表す。"],
+          ["“big” の意味は？", ["大きい","小さい","長い","短い"], "bigの反対はsmall（小さい）。"],
+          ["“run” の意味は？", ["走る","歩く","泳ぐ","飛ぶ"], "run＝走る。"]
+        ],
+        "あいさつ・日常表現": [
+          ["“Good morning” の意味は？", ["おはよう","こんにちは","こんばんは","さようなら"], "morningは「朝」、朝のあいさつ。"],
+          ["“Thank you” の意味は？", ["ありがとう","ごめんなさい","どういたしまして","こんにちは"], "感謝を伝えるときの表現。"],
+          ["“How are you?” の意味は？", ["元気ですか？","あなたは誰？","何時ですか？","どこですか？"], "相手の様子・調子をたずねる表現。"],
+          ["“I like ～” の意味は？", ["私は～が好きです","私は～が欲しいです","私は～を持っています","私は～します"], "likeは「好き」という意味。"],
+          ["“What time is it?” の意味は？", ["今何時ですか？","今日は何日ですか？","あなたは誰ですか？","元気ですか？"], "timeは「時間」、時刻をたずねる表現。"],
+          ["“See you.” の意味は？", ["またね","はじめまして","ごめんなさい","ありがとう"], "別れるときに使うあいさつ。"]
+        ],
+        "アルファベット・数": [
+          ["“seven” は数字でいくつ？", ["7","17","70","6"], "seven＝7。"],
+          ["“twenty” は数字でいくつ？", ["20","12","2","200"], "twenty＝20。"],
+          ["アルファベットで最初の文字は？", ["A","B","Z","C"], "アルファベットはAから始まる。"],
+          ["“Monday” は何曜日？", ["月曜日","日曜日","火曜日","土曜日"], "Monday＝月曜日。"],
+          ["“January” は何月？", ["1月","12月","6月","7月"], "January＝1月。"],
+          ["“red” の意味は？", ["赤","青","緑","黄色"], "red＝赤色。"]
+        ]
+      },
+      "中1": {
+        "基本動詞・形容詞": [
+          ["“important” の意味は？", ["重要な","忙しい","楽しい","危険な"], "importantは「大切な・重要な」という意味。"],
+          ["“difficult” の意味は？", ["難しい","簡単な","楽な","重い"], "difficultの反対はeasy（簡単な）。"],
+          ["“beautiful” の意味は？", ["美しい","恐ろしい","退屈な","忙しい"], "beautiful＝美しい。"],
+          ["“arrive” の意味は？", ["到着する","出発する","到着させる","止まる"], "arrive＝着く、到着する。"],
+          ["“borrow” の意味は？", ["借りる","貸す","返す","買う"], "borrowは「借りる」。貸すはlend。"],
+          ["“expensive” の意味は？", ["高価な","安い","古い","新しい"], "expensiveの反対はcheap（安い）。"]
+        ],
+        "be動詞・一般動詞の文法": [
+          ["I ___ a student.（be動詞）に入るのは？", ["am","is","are","be"], "主語がIのときのbe動詞はam。"],
+          ["She ___ a teacher.（be動詞）に入るのは？", ["is","am","are","be"], "主語が三人称単数（she）のときのbe動詞はis。"],
+          ["He ___ every day.（走る）に入るのは？", ["runs","run","running","to run"], "主語が三人称単数のとき一般動詞にsをつける。"],
+          ["They ___ soccer.（する）に入るのは？", ["play","plays","playing","played"], "theyは複数の主語なので動詞にsはつかない。"],
+          ["This ___ my bag. に入るのは？", ["is","am","are","be"], "thisは単数なのでbe動詞はis。"],
+          ["I ___ two dogs.（持っている）に入るのは？", ["have","has","having","to have"], "主語がIのときはhaveを使う。"]
+        ],
+        "疑問文・否定文": [
+          ["“Do you like tea?” の意味は？", ["あなたはお茶が好きですか？","私はお茶が好きです","お茶を飲んでください","お茶はどこですか？"], "Doで始まる疑問文は「〜しますか？」という意味。"],
+          ["“I don't like coffee.” の意味は？", ["私はコーヒーが好きではない","私はコーヒーが好きだ","私はコーヒーを飲む","私はコーヒーがほしい"], "don't＝do not。否定を表す。"],
+          ["She ___ not play tennis.（否定文）に入るのは？", ["does","do","is","am"], "主語が三人称単数の否定文はdoes notを使う。"],
+          ["“Is this your pen?” への答えで正しいのは？", ["Yes, it is.","Yes, I am.","Yes, you are.","Yes, he does."], "Is this〜?にはit is / it isn'tで答える。"],
+          ["“What is this?” の意味は？", ["これは何ですか？","これはどこですか？","これは誰ですか？","いつですか？"], "Whatは「何」をたずねる疑問詞。"],
+          ["“Where do you live?” の意味は？", ["あなたはどこに住んでいますか？","あなたは何をしますか？","いつ来ますか？","誰と住んでいますか？"], "Whereは「どこ」をたずねる疑問詞。"]
+        ]
+      },
+      "中2": {
+        "動詞・熟語": [
+          ["“explain” の意味は？", ["説明する","質問する","答える","聞く"], "explain＝説明する。"],
+          ["“remember” の意味は？", ["覚えている","忘れる","思い出せない","考える"], "remember⇔forget（忘れる）。"],
+          ["“because of” の意味は？", ["〜のために（理由）","〜にもかかわらず","〜については","〜の代わりに"], "because of ～で「〜が理由で」という意味。"],
+          ["“for example” の意味は？", ["例えば","つまり","その結果","一方で"], "例をあげるときに使う表現。"],
+          ["“look forward to” の意味は？", ["〜を楽しみにする","〜を探す","〜を見る","〜を忘れる"], "look forward to ～で「〜を楽しみに待つ」。"],
+          ["“take care of” の意味は？", ["〜の世話をする","〜を作る","〜を捨てる","〜を借りる"], "take care of ～で「〜の世話をする」。"]
+        ],
+        "過去形・未来形": [
+          ["“I ___ to Kyoto last year.”（go）に入る形は？", ["went","go","gone","going"], "goの過去形は不規則変化でwent。"],
+          ["過去進行形 “was/were + ___” に入る形は？", ["動詞ing","過去分詞","原形","過去形"], "過去進行形は「was/were＋動詞のing形」。"],
+          ["“be going to” の意味に近いのは？", ["〜するつもりだ","〜したことがある","〜していた","〜すべきだ"], "be going toは未来の予定・意志を表す。"],
+          ["“will” の意味に近いのは？", ["〜するだろう","〜した","〜している","〜すべきだ"], "willは未来のことを表す助動詞。"],
+          ["“play” の過去形は？", ["played","plays","playing","plaied"], "規則動詞は語尾にedをつける。"],
+          ["“eat” の過去形は？", ["ate","eated","eaten","eats"], "eatは不規則動詞でate。過去分詞はeaten。"]
+        ],
+        "比較表現": [
+          ["fast の比較級は？", ["faster","fastest","more fast","fasted"], "短い形容詞・副詞は語尾にerをつけて比較級を作る。"],
+          ["good の最上級は？", ["best","better","goodest","most good"], "goodは不規則変化：good-better-best。"],
+          ["“She is taller ___ me.” に入る単語は？", ["than","as","then","that"], "比較級のあとにはthanを使う。"],
+          ["“as ... as” の意味は？", ["〜と同じくらい…","〜より…","〜の中で最も…","〜ではない"], "as＋原級＋asで「〜と同じくらい」。"],
+          ["“the most beautiful” の意味に近いのは？", ["一番美しい","より美しい","あまり美しくない","美しくない"], "長い単語はmostをつけて最上級を作る。"],
+          ["“important” の比較級は？", ["more important","importanter","importantest","most important"], "長い単語はmoreをつけて比較級を作る。"]
+        ]
+      },
+      "中3": {
+        "受け身・現在完了": [
+          ["現在完了形 “have + ___” に入る形は？", ["過去分詞","現在分詞","原形","過去形"], "現在完了は「have/has＋過去分詞」の形。"],
+          ["受け身「〜される」の形は？", ["be + 過去分詞","be + 現在分詞","have + 過去分詞","do + 原形"], "受け身は「be動詞＋過去分詞」で表す。"],
+          ["“I have already finished my homework.” の意味は？", ["私はすでに宿題を終えました","私は宿題をしています","私は宿題を終えるつもりです","私は宿題をしたことがありません"], "have＋過去分詞で「完了」を表す。"],
+          ["“This book is written in English.” の意味は？", ["この本は英語で書かれている","この本は英語を書いている","この本は英語で書く","この本は英語を書いた"], "be動詞＋過去分詞で「〜される」という受け身の意味。"],
+          ["“Have you ever been to Osaka?” の意味は？", ["大阪に行ったことがありますか？","大阪に行くつもりですか？","大阪にいますか？","大阪から来ましたか？"], "have＋過去分詞で「経験」を表す。"],
+          ["過去分詞の作り方として正しいのは？", ["規則動詞は語尾にed（不規則動詞は別の形）","いつも原形と同じ","いつもing","いつもes"], "playedのような規則動詞と、writtenのような不規則動詞がある。"]
+        ],
+        "高度な単語": [
+          ["“receive” の意味は？", ["受け取る","送る","借りる","忘れる"], "receive＝受け取る。"],
+          ["“environment” の意味は？", ["環境","経済","教育","文化"], "environment＝環境。"],
+          ["“opportunity” の意味は？", ["機会","義務","責任","約束"], "opportunity＝チャンス、機会。"],
+          ["“experience” の意味は？", ["経験","実験","想像","記憶"], "experience＝経験。"],
+          ["“population” の意味は？", ["人口","面積","気候","産業"], "population＝人口。"],
+          ["“solution” の意味は？", ["解決策","問題","原因","結果"], "solution＝問題の解決方法。"]
+        ],
+        "関係代名詞・不定詞": [
+          ["“This is the book which I bought.” のwhichの役割は？", ["「本」を説明する（関係代名詞）","疑問を表す","場所を表す","時間を表す"], "whichはものを説明するときに使う関係代名詞。"],
+          ["不定詞「to＋動詞の原形」の基本の意味の1つは？", ["〜すること","〜された","〜している","〜だった"], "不定詞は「〜すること」「〜するために」などの意味を持つ。"],
+          ["“I want to be a doctor.” の意味は？", ["私は医者になりたい","私は医者です","私は医者になった","私は医者を知っている"], "want to ～で「〜したい」という意味。"],
+          ["関係代名詞whoはどんなときに使う？", ["人を説明するとき","ものを説明するとき","場所を説明するとき","時間を説明するとき"], "whoは人を、whichはものを説明する関係代名詞。"],
+          ["“It is important to study English.” のItは何を指す？", ["特に何も指さない（形式主語）","前の文の内容","English","study"], "It is ... to ～の形では、Itは形式的な主語で意味を持たない。"],
+          ["“something to drink” の意味は？", ["何か飲むもの","何かを飲んだ","飲むために何か作る","飲んでいる何か"], "to drinkがsomethingを後ろから説明している（不定詞の形容詞的用法）。"]
+        ]
+      }
+    },
+    math: {
+      "小6": {
+        "分数の計算": [
+          ["2/3 + 1/6 = ？", ["5/6","3/9","1/2","1"], "通分すると2/3＝4/6。4/6＋1/6＝5/6。"],
+          ["3/4 × 2/5 = ？", ["3/10","6/9","5/20","4/9"], "分子どうし・分母どうしをかけて3×2/4×5＝6/20＝3/10。"],
+          ["5/6 ÷ 1/3 = ？", ["5/2","5/18","3/6","2/5"], "わり算は逆数をかける。5/6×3/1＝15/6＝5/2。"],
+          ["0.75 を分数で表すと？", ["3/4","7/5","3/5","4/3"], "0.75＝75/100＝3/4。"],
+          ["1と1/2 を仮分数で表すと？", ["3/2","2/1","1/2","4/2"], "1＝2/2。2/2＋1/2＝3/2。"],
+          ["4/5 × 5 = ？", ["4","1/4","9/5","20"], "4/5×5/1＝20/5＝4。"]
+        ],
+        "比・割合": [
+          ["3：4 ＝ 9：x のxは？", ["12","15","9","6"], "3：4を3倍すると9：12。"],
+          ["定価800円の2割引きはいくら？", ["640円","720円","600円","560円"], "800×(1-0.2)＝640円。"],
+          ["60人の40%は何人？", ["24人","20人","30人","40人"], "60×0.4＝24人。"],
+          ["男子と女子の比が3：2、全体20人のとき男子は何人？", ["12人","8人","10人","15人"], "3＋2＝5、20÷5＝4、男子3×4＝12人。"],
+          ["100gの3割は何g？", ["30g","3g","70g","13g"], "100×0.3＝30g。"],
+          ["原価500円に2割の利益を見込んだ売値は？", ["600円","700円","520円","550円"], "500×1.2＝600円。"]
+        ],
+        "図形の面積と体積": [
+          ["底辺8cm、高さ5cmの平行四辺形の面積は？", ["40cm²","20cm²","13cm²","26cm²"], "平行四辺形の面積＝底辺×高さ＝8×5＝40cm²。"],
+          ["半径4cmの円の面積は？（π使用）", ["16π cm²","8π cm²","4π cm²","32π cm²"], "面積＝半径×半径×π＝4×4×π＝16π cm²。"],
+          ["三角形の内角の和は？", ["180度","360度","90度","270度"], "三角形の内角の和はいつも180度。"],
+          ["縦2cm・横3cm・高さ4cmの直方体の体積は？", ["24cm³","9cm³","20cm³","29cm³"], "体積＝縦×横×高さ＝2×3×4＝24cm³。"],
+          ["円柱の底面積を求める公式は？", ["半径×半径×π","直径×π","半径×π","直径×直径×π"], "円の面積の公式と同じ、半径×半径×π。"],
+          ["正方形の面積が49cm²のとき、1辺の長さは？", ["7cm","49cm","24.5cm","14cm"], "7×7＝49なので1辺は7cm。"]
+        ],
+        "文字と式の基礎": [
+          ["xに3を代入したときの「x＋5」の値は？", ["8","15","2","53"], "3＋5＝8。"],
+          ["「1個a円のりんごを4個買った代金」を式で表すと？", ["4×a（円）","a×a","a＋4","a÷4"], "1個の値段×個数＝代金。"],
+          ["xが5のとき、2×xの値は？", ["10","7","25","2"], "2×5＝10。"],
+          ["「x円の半分」を式で表すと？", ["x÷2","x×2","x-2","2÷x"], "半分はわり算で表す。"],
+          ["yに4を代入したときの「20÷y」の値は？", ["5","16","24","80"], "20÷4＝5。"],
+          ["「amに3mたした長さ」を式で表すと？", ["a+3（m）","a×3","a-3","3÷a"], "たし算はそのままa+3。"]
+        ]
+      },
+      "中1": {
+        "正負の数": [
+          ["7 + (-12) = ？", ["-5","5","-19","19"], "符号が違う数の足し算は大きい方から小さい方をひき、大きい方の符号をつける。12-7=5、符号は-。"],
+          ["-3 × 4 = ？", ["-12","12","-7","7"], "符号が違うかけ算の答えはマイナス。3×4=12で符号は-。"],
+          ["-8 ÷ 2 = ？", ["-4","4","-16","16"], "符号が違うわり算の答えはマイナス。8÷2=4で符号は-。"],
+          ["(-5) + (-9) = ？", ["-14","14","-4","4"], "同じ符号の足し算は数をたして同じ符号をつける。5+9=14、符号は-。"],
+          ["6 - (-4) = ？", ["10","2","-10","-2"], "ひくマイナスはたし算になる。6-(-4)=6+4=10。"],
+          ["-6 × (-3) = ？", ["18","-18","9","-9"], "符号が同じかけ算の答えはプラス。6×3=18。"]
+        ],
+        "文字式": [
+          ["3a + 2a = ？", ["5a","6a","a","5a²"], "同じ文字の項は係数どうしをたし算できる。3+2=5でa。"],
+          ["4x - x = ？", ["3x","4","3","5x"], "xは1xと同じ。4x-1x=3x。"],
+          ["2(x+3) を展開すると？", ["2x+6","2x+3","x+6","2x+5"], "かっこの中の両方に2をかける。2×x=2x、2×3=6。"],
+          ["a=3, b=2 のとき 2a+b の値は？", ["8","10","7","6"], "2×3+2=6+2=8。"],
+          ["x × x × x を指数で表すと？", ["x³","3x","x+3","3^x"], "同じ文字を3回かけると3乗、x³と書く。"],
+          ["-2x × 3 = ？", ["-6x","6x","-5x","5x"], "係数どうしをかける。-2×3=-6でx。"]
+        ],
+        "一次方程式": [
+          ["x + 5 = 12 の x は？", ["7","17","-7","6"], "両辺から5をひくとx=12-5=7。"],
+          ["3x = 21 の x は？", ["7","63","18","24"], "両辺を3でわるとx=21÷3=7。"],
+          ["2x - 4 = 10 の x は？", ["7","3","6","14"], "両辺に4をたして2x=14、両辺を2でわりx=7。"],
+          ["x ÷ 3 = 6 の x は？", ["18","2","9","3"], "両辺に3をかけてx=6×3=18。"],
+          ["-2x = 10 の x は？", ["-5","5","-20","20"], "両辺を-2でわるとx=10÷(-2)=-5。"],
+          ["4(x-1) = 8 の x は？", ["3","2","4","1"], "両辺を4でわりx-1=2、両辺に1をたしx=3。"]
+        ],
+        "比例・反比例": [
+          ["100の20%は？", ["20","10","50","80"], "100×0.2=20。"],
+          ["y は x に比例し、x=2 で y=8。x=5 のときの y は？", ["20","10","40","16"], "比例定数はy÷x=8÷2=4。y=4×5=20。"],
+          ["y は x に反比例し、x=2 で y=6。x=3 のときの y は？", ["4","9","2","18"], "xとyの積は一定でx×y=2×6=12。x=3のときy=12÷3=4。"],
+          ["定価2000円の品物を3割引きで買うといくら？", ["1400円","1600円","1200円","1800円"], "2000×(1-0.3)=1400円。"],
+          ["y が x に比例し比例定数が-3のとき、x=4 の y は？", ["-12","12","-7","7"], "y=-3×4=-12。"],
+          ["5：8 ＝ x：24 の x は？", ["15","12","20","10"], "8を3倍すると24なので、5も3倍してx=15。"]
+        ]
+      },
+      "中2": {
+        "連立方程式": [
+          ["x+y=10, x-y=2 のとき x は？", ["6","4","8","2"], "2つの式をたすと2x=12、x=6。"],
+          ["上と同じ連立方程式で y は？", ["4","10","2","6"], "x=6をx+y=10に代入するとy=4。"],
+          ["2x+y=9, x-y=3 のとき x は？", ["4","9","3","1"], "2式をたすと3x=12、x=4。"],
+          ["上と同じ連立方程式で y は？", ["1","3","4","9"], "x=4をx-y=3に代入するとy=1。"],
+          ["x=2y, x+y=12 のとき x は？", ["8","4","12","6"], "x=2yをx+y=12に代入すると3y=12、y=4、x=2×4=8。"],
+          ["3x+2y=16, x=2 のとき y は？", ["5","6","2","10"], "3×2+2y=16、2y=10、y=5。"]
+        ],
+        "一次関数": [
+          ["y = 2x + 3 で x = 4 のときの y は？", ["11","8","14","7"], "2×4+3=8+3=11。"],
+          ["y = -x + 5 のグラフの傾きは？", ["-1","1","5","-5"], "y=ax+bのaが傾き。ここではa=-1。"],
+          ["y = 3x - 2 のグラフの切片は？", ["-2","2","3","-3"], "y=ax+bのbが切片。ここではb=-2。"],
+          ["傾き2、切片1の直線の式は？", ["y=2x+1","y=x+2","y=2x-1","y=1x+2"], "y=ax+bにa=2, b=1を当てはめる。"],
+          ["2点(0,1)と(2,5)を通る直線の傾きは？", ["2","4","1","0.5"], "傾き＝yの変化÷xの変化＝(5-1)÷(2-0)=2。"],
+          ["y = x + 6 のグラフがx軸と交わる点のx座標は？", ["-6","6","0","1"], "x軸上ではy=0なので0=x+6、x=-6。"]
+        ],
+        "図形の性質": [
+          ["五角形の内角の和は？", ["540度","360度","720度","450度"], "多角形の内角の和は180×(角の数-2)。180×(5-2)=540度。"],
+          ["六角形の内角の和は？", ["720度","540度","900度","360度"], "180×(6-2)=720度。"],
+          ["平行な2直線に1本の直線が交わるとき、同位角の関係は？", ["等しい","足すと180度","足すと90度","関係ない"], "平行線の同位角はいつも等しい。"],
+          ["三角形の合同条件でないものは？", ["2辺とその間にない角が等しい","3辺がそれぞれ等しい","2辺とその間の角が等しい","1辺とその両端の角が等しい"], "合同条件は「3辺」「2辺と間の角」「1辺と両端の角」の3つ。それ以外は含まれない。"],
+          ["二等辺三角形の底角はどんな関係？", ["等しい","足すと90度","足すと180度","関係ない"], "二等辺三角形の2つの底角は必ず等しい。"],
+          ["対頂角の関係は？", ["等しい","足すと180度","足すと90度","関係ない"], "2直線が交わってできる向かい合う角（対頂角）はいつも等しい。"]
+        ],
+        "確率": [
+          ["さいころ1回で偶数の目が出る確率は？", ["1/2","1/3","1/6","2/3"], "偶数の目は2,4,6の3通り、全部で6通りなので3/6=1/2。"],
+          ["コインを1回投げて表が出る確率は？", ["1/2","1/3","1","0"], "表と裏の2通りのうち1通り。"],
+          ["さいころ1回で3の目が出る確率は？", ["1/6","1/3","1/2","1"], "目は1〜6の6通りのうち1通り。"],
+          ["袋に赤玉3個、白玉2個。赤玉を取り出す確率は？", ["3/5","2/5","1/2","3/2"], "全部で5個のうち赤玉は3個。"],
+          ["さいころを2回投げて両方1が出る確率は？", ["1/36","1/6","1/12","2/6"], "1回目1の確率1/6、2回目も1/6、かけて1/36。"],
+          ["コインを2回投げて2回とも表が出る確率は？", ["1/4","1/2","1/3","1/8"], "1回目1/2、2回目1/2、かけて1/4。"]
+        ]
+      },
+      "中3": {
+        "平方根": [
+          ["√16 = ？", ["4","8","16","2"], "4×4=16だから√16=4。"],
+          ["√9 + √4 = ？", ["5","7","13","6"], "√9=3、√4=2、3+2=5。"],
+          ["√2 はおよそいくつ？", ["約1.41","約1.73","約1.22","約2.24"], "1.41×1.41がほぼ2になる。"],
+          ["√50 を簡単にすると？", ["5√2","2√5","10√5","25√2"], "50=25×2、√25×√2=5√2。"],
+          ["(√3)² = ？", ["3","9","√3","6"], "√の2乗はもとの数にもどる。"],
+          ["9の平方根は？", ["±3","3のみ","9","81"], "2乗して9になる数は3と-3の両方。"]
+        ],
+        "式の展開・因数分解": [
+          ["(x+2)(x-2) を展開すると？", ["x²-4","x²+4","x²-2x-4","x²+2x-4"], "(a+b)(a-b)=a²-b²の公式より2²=4を引く。"],
+          ["(x+3)² を展開すると？", ["x²+6x+9","x²+9","x²+3x+9","x²+6x+6"], "(a+b)²=a²+2ab+b²より2×x×3=6x、3²=9。"],
+          ["x²-9 を因数分解すると？", ["(x+3)(x-3)","(x-3)(x-3)","(x+3)(x+3)","(x+9)(x-1)"], "9=3²なのでa²-b²=(a+b)(a-b)の形。"],
+          ["x²+5x+6 を因数分解すると？", ["(x+2)(x+3)","(x+1)(x+6)","(x+6)(x-1)","(x-2)(x-3)"], "積が6、和が5になる2数は2と3。"],
+          ["(x-4)² を展開すると？", ["x²-8x+16","x²-16","x²-4x+16","x²+8x+16"], "(a-b)²=a²-2ab+b²より2×x×4=8x、4²=16。"],
+          ["x²-x-6 を因数分解すると？", ["(x-3)(x+2)","(x+3)(x-2)","(x-6)(x+1)","(x+6)(x-1)"], "積が-6、和が-1になる2数は-3と2。"]
+        ],
+        "二次方程式": [
+          ["x²=9 の解は？", ["x=±3","x=3","x=9","x=±9"], "2乗して9になる数は3と-3。"],
+          ["x²-4=0 の解は？", ["x=±2","x=4","x=±4","x=2"], "x²=4なのでx=±2。"],
+          ["(x-1)(x-2)=0 の解は？", ["x=1,2","x=-1,-2","x=1,-2","x=-1,2"], "どちらかのかっこが0になればよい。x-1=0またはx-2=0。"],
+          ["x²+5x+6=0 の解は？", ["x=-2,-3","x=2,3","x=-2,3","x=2,-3"], "因数分解すると(x+2)(x+3)=0。"],
+          ["x²-6x+9=0 の解は？", ["x=3（重解）","x=-3","x=3,-3","x=6,3"], "因数分解すると(x-3)²=0で解は1つ（重解）。"],
+          ["x²-x=0 の解は？", ["x=0,1","x=1のみ","x=-1,0","x=0のみ"], "x(x-1)=0と因数分解できるので、x=0またはx=1。"]
+        ],
+        "相似・三平方の定理": [
+          ["直角をはさむ2辺が3cmと4cmの直角三角形の斜辺は？", ["5cm","7cm","6cm","4.5cm"], "三平方の定理a²+b²=c²より3²+4²=25、√25=5cm。"],
+          ["直角をはさむ2辺が6cmと8cmの斜辺は？", ["10cm","14cm","12cm","9cm"], "6²+8²=100、√100=10cm。"],
+          ["相似な図形の対応する辺の比が2：3のとき、面積比は？", ["4：9","2：3","4：6","8：27"], "面積比は辺の比の2乗、2²：3²=4：9。"],
+          ["相似な図形で対応する角の大きさは？", ["等しい","比例する","足すと180度","関係ない"], "相似な図形は形が同じで大きさだけ違うので、対応する角は等しい。"],
+          ["斜辺5cm、他の1辺が3cmの直角三角形のもう1辺は？", ["4cm","2cm","6cm","8cm"], "5²-3²=16、√16=4cm。"],
+          ["1辺が1cmの正方形の対角線の長さは？", ["√2 cm","2cm","1cm","1/2 cm"], "三平方の定理より1²+1²=2、対角線=√2cm。"]
+        ]
+      }
+    },
+    soc: {
+      "小6": {
+        "社会（歴史入門）": [
+          ["聖徳太子が活躍したのはどの時代？", ["飛鳥時代","奈良時代","平安時代","鎌倉時代"], "聖徳太子は飛鳥時代に活躍した人物。"],
+          ["東大寺の大仏が建てられたのはどの時代？", ["奈良時代","飛鳥時代","平安時代","江戸時代"], "東大寺の大仏は奈良時代に建てられた。"],
+          ["「源氏物語」を書いたのは誰？", ["紫式部","清少納言","聖徳太子","卑弥呼"], "紫式部は平安時代の作家。"],
+          ["江戸幕府を開いたのは誰？", ["徳川家康","豊臣秀吉","織田信長","徳川家光"], "徳川家康は江戸幕府の初代将軍。"],
+          ["明治時代に日本の首都はどこになった？", ["東京","京都","大阪","奈良"], "明治維新後、都は京都から東京に移された。"],
+          ["日本国憲法が施行されたのは何年？", ["1947年","1946年","1950年","1868年"], "1946年に公布され、翌1947年に施行された。"]
+        ],
+        "理科（人体・生物の基礎）": [
+          ["人間が呼吸で取り入れる気体は？", ["酸素","二酸化炭素","窒素","水素"], "呼吸で酸素を取り入れ、二酸化炭素を出す。"],
+          ["消化に関わる器官でないのは？", ["肺","胃","腸","肝臓"], "肺は呼吸のための器官で、消化には関わらない。"],
+          ["血液を全身に送り出す働きをする臓器は？", ["心臓","肝臓","腎臓","胃"], "心臓がポンプのように血液を送り出す。"],
+          ["植物が日光を使って栄養を作るはたらきは？", ["光合成","呼吸","蒸散","発芽"], "光合成は日光を使ってデンプンなどの栄養を作るはたらき。"],
+          ["メダカのたまごの育ち方の順番で正しいのは？", ["受精卵→ふ化","ふ化→受精卵","たまご→親→受精卵","ふ化→親→たまご"], "受精した卵が育ってふ化（誕生）する。"],
+          ["てこで力を加える場所を何という？", ["力点","支点","作用点","重点"], "てこには支点・力点・作用点の3つがある。"]
+        ]
+      },
+      "中1": {
+        "社会（地理の基礎）": [
+          ["日本の標準時子午線は東経何度？", ["135度","145度","125度","150度"], "兵庫県明石市を通る東経135度線が標準時子午線。"],
+          ["日本で一番人口が多い都市は？", ["東京","大阪","横浜","名古屋"], "東京は日本の首都であり、人口が最も多い。"],
+          ["日本で一番面積が大きい都道府県は？", ["北海道","岩手県","福島県","長野県"], "北海道は日本最大の都道府県。"],
+          ["川が運んだ土砂が河口に積もってできる地形は？", ["三角州","扇状地","盆地","台地"], "川の河口付近にできる平らな地形。"],
+          ["排他的経済水域の略称は？", ["EEZ","GDP","NGO","ODA"], "Exclusive Economic Zoneの略。"],
+          ["世界で一番人口が多い国は？", ["インド","中国","アメリカ","インドネシア"], "近年インドが中国を上回り、世界一の人口となった。"]
+        ],
+        "理科（植物・化学の基礎）": [
+          ["光合成を行う細胞内の部分は？", ["葉緑体","核","ミトコンドリア","細胞壁"], "葉緑体で光合成が行われる。"],
+          ["植物が根から吸収した水を運ぶ管は？", ["道管","師管","気孔","葉脈"], "道管は水を、師管は栄養分を運ぶ。"],
+          ["水の化学式は？", ["H₂O","CO₂","O₂","NaCl"], "水は水素原子2個と酸素原子1個からできている。"],
+          ["塩酸は何性？", ["酸性","アルカリ性","中性","どれでもない"], "塩酸(HCl)は強い酸性の液体。"],
+          ["酸性・アルカリ性を調べる指示薬は？", ["リトマス紙","ろ紙","アルミ箔","セロハン"], "青色リトマス紙が赤くなると酸性。"],
+          ["原子番号1の元素は？", ["水素","ヘリウム","炭素","酸素"], "水素はもっとも軽く、原子番号1の元素。"]
+        ]
+      },
+      "中2": {
+        "社会（歴史：江戸〜明治）": [
+          ["江戸幕府を開いたのは誰？", ["徳川家康","徳川家光","豊臣秀吉","織田信長"], "1603年に徳川家康が江戸幕府を開いた。"],
+          ["明治維新が起こったのは西暦何年ごろ？", ["1868年","1854年","1912年","1789年"], "1868年に明治政府が成立し、近代化が始まった。"],
+          ["廃藩置県が行われたのは何年？", ["1871年","1868年","1889年","1894年"], "藩を廃止して県を置く改革が1871年に行われた。"],
+          ["大日本帝国憲法が発布されたのは何年？", ["1889年","1868年","1946年","1912年"], "1889年に発布され、天皇が主権を持つ憲法だった。"],
+          ["日清戦争の講和条約は？", ["下関条約","ポーツマス条約","ベルサイユ条約","日米和親条約"], "日清戦争(1894-95)の結果結ばれた条約。"],
+          ["明治政府の近代化政策を何という？", ["殖産興業（富国強兵）","鎖国","大化の改新","楽市楽座"], "産業を興し強い国をつくる政策として殖産興業・富国強兵が進められた。"]
+        ],
+        "理科（電気・化学変化）": [
+          ["電流の単位は？", ["アンペア（A）","ボルト（V）","オーム（Ω）","ワット（W）"], "電流の大きさを表す単位。"],
+          ["電圧の単位は？", ["ボルト（V）","アンペア（A）","オーム（Ω）","ジュール（J）"], "電圧の大きさを表す単位。"],
+          ["オームの法則で「電圧＝電流×？」", ["抵抗","電力","時間","質量"], "電圧(V)＝電流(I)×抵抗(R)というオームの法則。"],
+          ["酸とアルカリが反応して塩と水ができる反応を何という？", ["中和","酸化","還元","分解"], "酸とアルカリを混ぜると中和反応が起こる。"],
+          ["物が燃えるときに使われる気体は？", ["酸素","二酸化炭素","窒素","水素"], "物が燃えるには酸素が必要。"],
+          ["食塩水から食塩を取り出す方法は？", ["蒸発（結晶化）","ろ過","磁石","遠心分離"], "水を蒸発させると溶けていた食塩が結晶として残る。"]
+        ]
+      },
+      "中3": {
+        "社会（公民）": [
+          ["国会の役割は？", ["法律を作る","法律を執行する","裁判を行う","予算を監査する"], "国会は「唯一の立法機関」として法律を作る。"],
+          ["三権分立で司法を担当するのは？", ["裁判所","国会","内閣","天皇"], "立法(国会)・行政(内閣)・司法(裁判所)の3つに分かれている。"],
+          ["国民主権・基本的人権の尊重ともう一つの日本国憲法の原則は？", ["平和主義","天皇主権","三権分立","議院内閣制"], "戦争放棄を定めた平和主義が3つ目の原則。"],
+          ["衆議院議員の任期は何年？", ["4年","6年","3年","5年"], "衆議院議員の任期は4年（解散もある）。"],
+          ["選挙権年齢は満何歳以上？", ["満18歳","満20歳","満16歳","満25歳"], "2016年の法改正で18歳以上に引き下げられた。"],
+          ["内閣総理大臣を指名するのは？", ["国会","天皇","最高裁判所","国民"], "国会が指名し、天皇が任命する。"]
+        ],
+        "理科（運動・地学）": [
+          ["地震の規模を表す尺度は？", ["マグニチュード","震度","プレート","断層"], "マグニチュードは地震そのものの大きさを表す。"],
+          ["力の大きさの単位は？", ["ニュートン（N）","ジュール（J）","パスカル（Pa）","ワット（W）"], "力の大きさを表す単位はニュートン。"],
+          ["凸レンズを通った光が集まる点を何という？", ["焦点","虚像","実像","反射点"], "凸レンズを通った平行光線が集まる点。"],
+          ["太陽系で一番大きい惑星は？", ["木星","土星","地球","海王星"], "木星は太陽系最大の惑星。"],
+          ["地球の内部構造で一番外側の層は？", ["地殻","マントル","外核","内核"], "地殻・マントル・核（外核・内核）の順に内部構造がある。"],
+          ["音は何が振動することで伝わる？", ["空気（媒質）","光","電気","磁力"], "音は空気などの物質(媒質)が振動することで伝わる。"]
+        ]
+      }
+    }
+  };
+
+  var STORE_KEY = "sodatemon_state_v1";
+  var CUSTOM_KEY = "sodatemon_custom_v3";
+
+  function todayStr(){ var d = new Date(); return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate(); }
+
+  function loadState(){
+    var def = { exp:0, correct:0, total:0, streak:0, stampDate:todayStr(), stampCount:0 };
+    try{
+      var raw = localStorage.getItem(STORE_KEY);
+      if(!raw) return def;
+      var s = JSON.parse(raw);
+      if(s.stampDate !== todayStr()){ s.stampDate = todayStr(); s.stampCount = 0; }
+      return Object.assign(def, s);
+    }catch(e){ return def; }
+  }
+  function saveState(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){} }
+
+  function loadCustom(){
+    var def = { eng:[], math:[], soc:[] };
+    try{
+      var raw = localStorage.getItem(CUSTOM_KEY);
+      if(!raw) return def;
+      var c = JSON.parse(raw);
+      ["eng","math","soc"].forEach(function(k){
+        if(!Array.isArray(c[k])) c[k] = [];
+        c[k] = c[k].filter(function(it){ return it && typeof it.text === "string" && Array.isArray(it.choices) && it.choices.length === 4; });
+      });
+      return c;
+    }catch(e){ return def; }
+  }
+  function saveCustom(){ try{ localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); }catch(e){} }
+
+  var state = loadState();
+  var custom = loadCustom();
+  var activeTab = "all";
+  var activeGrade = "all";
+  var activeUnit = "__all__";
+  var lastQ = null;
+  var currentAnswerCorrectText = null;
+  var qCounter = 0;
+
+  function stageOf(exp){ var idx = 0; for(var i=0;i<STAGES.length;i++){ if(exp >= STAGES[i].need) idx = i; } return idx; }
+  function nextThreshold(exp){ var idx = stageOf(exp); return idx < STAGES.length-1 ? STAGES[idx+1].need : STAGES[idx].need; }
+  function prevThreshold(exp){ return STAGES[stageOf(exp)].need; }
+
+  function unitsFor(subject, grade){
+    if(subject === "all") return [];
+    var out = [];
+    var grades = grade === "all" ? GRADES : [grade];
+    grades.forEach(function(g){
+      var bankG = (BANK[subject] && BANK[subject][g]) || {};
+      Object.keys(bankG).forEach(function(u){ if(out.indexOf(u) === -1) out.push(u); });
+    });
+    return out;
+  }
+
+  function pool(subject, grade, unit){
+    var list = [];
+    var subjects = subject === "all" ? ["eng","math","soc"] : [subject];
+    var grades = grade === "all" ? GRADES : [grade];
+    var useUnitFilter = subject !== "all" && unit && unit !== "__all__";
+    subjects.forEach(function(s){
+      grades.forEach(function(g){
+        var bankG = (BANK[s] && BANK[s][g]) || {};
+        var units = useUnitFilter ? (bankG[unit] ? [unit] : []) : Object.keys(bankG);
+        units.forEach(function(u){
+          (bankG[u] || []).forEach(function(q){
+            list.push({ subject:s, grade:g, unit:u, text:q[0], choices:q[1], explanation:q[2] || "" });
+          });
+        });
+      });
+      (custom[s] || []).forEach(function(c){
+        if(grade !== "all" && c.grade !== grade) return;
+        if(useUnitFilter && c.unit !== unit) return;
+        list.push({ subject:s, grade:c.grade, unit:c.unit, text:c.text, choices:c.choices, explanation:c.explanation || "" });
+      });
+    });
+    return list;
+  }
+
+  function shuffle(arr){
+    var a = arr.slice();
+    for(var i=a.length-1;i>0;i--){ var j = Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; }
+    return a;
+  }
+
+  function renderCreature(){
+    var idx = stageOf(state.exp);
+    var el = document.getElementById("creature");
+    el.setAttribute("data-stage", String(idx));
+    document.getElementById("stageName").textContent = STAGES[idx].name;
+    document.getElementById("stageCaption").textContent = STAGES[idx].caption;
+    var lo = prevThreshold(state.exp), hi = nextThreshold(state.exp);
+    var pct = hi === lo ? 100 : Math.min(100, Math.round((state.exp-lo)/(hi-lo)*100));
+    document.getElementById("expFill").style.width = pct + "%";
+    document.getElementById("expText").textContent = idx === STAGES.length-1 ? (state.exp + " （最終形態）") : (state.exp + " / " + hi);
+  }
+
+  function renderStats(){
+    document.getElementById("statCorrect").textContent = state.correct;
+    document.getElementById("statTotal").textContent = state.total;
+    document.getElementById("statStreak").textContent = state.streak;
+    document.getElementById("statRate").textContent = state.total ? Math.round(state.correct/state.total*100)+"%" : "0%";
+  }
+
+  function renderStamps(justAdded){
+    var row = document.getElementById("stampRow");
+    row.innerHTML = "";
+    var n = state.stampCount;
+    var shown = Math.max(n, 6);
+    for(var i=0;i<shown;i++){
+      var s = document.createElement("div");
+      if(i < n){ s.className = "stamp" + (justAdded && i === n-1 ? " stamp-pop" : ""); s.textContent = "合"; }
+      else { s.className = "stamp empty"; s.textContent = ""; }
+      row.appendChild(s);
+    }
+  }
+
+  function renderAll(justStamped){ renderCreature(); renderStats(); renderStamps(justStamped); }
+
+  function renderGradeRow(){
+    var row = document.getElementById("gradeRow");
+    row.innerHTML = "";
+
+    var lbl = document.createElement("span");
+    lbl.className = "chip-row-label";
+    lbl.textContent = "学年";
+    row.appendChild(lbl);
+
+    var allChip = document.createElement("button");
+    allChip.type = "button"; allChip.className = "unit-chip";
+    allChip.style.setProperty("--chip-c", "var(--gold)");
+    allChip.textContent = "すべて";
+    allChip.setAttribute("aria-pressed", activeGrade === "all" ? "true" : "false");
+    allChip.addEventListener("click", function(){ selectGrade("all"); });
+    row.appendChild(allChip);
+
+    GRADES.forEach(function(g){
+      var chip = document.createElement("button");
+      chip.type = "button"; chip.className = "unit-chip";
+      chip.style.setProperty("--chip-c", "var(--gold)");
+      chip.textContent = GRADE_LABEL[g];
+      chip.setAttribute("aria-pressed", activeGrade === g ? "true" : "false");
+      chip.addEventListener("click", function(){ selectGrade(g); });
+      row.appendChild(chip);
+    });
+  }
+
+  function renderUnitRow(){
+    var row = document.getElementById("unitRow");
+    if(activeTab === "all"){ row.hidden = true; row.innerHTML = ""; return; }
+    row.hidden = false;
+    row.innerHTML = "";
+    var subjColor = "var(--" + activeTab + ")";
+
+    var lbl = document.createElement("span");
+    lbl.className = "chip-row-label";
+    lbl.textContent = "単元";
+    row.appendChild(lbl);
+
+    var allChip = document.createElement("button");
+    allChip.type = "button"; allChip.className = "unit-chip";
+    allChip.style.setProperty("--chip-c", subjColor);
+    allChip.textContent = "すべて";
+    allChip.setAttribute("aria-pressed", activeUnit === "__all__" ? "true" : "false");
+    allChip.addEventListener("click", function(){ selectUnit("__all__"); });
+    row.appendChild(allChip);
+
+    unitsFor(activeTab, activeGrade).forEach(function(u){
+      var chip = document.createElement("button");
+      chip.type = "button"; chip.className = "unit-chip";
+      chip.style.setProperty("--chip-c", subjColor);
+      chip.textContent = u;
+      chip.setAttribute("aria-pressed", activeUnit === u ? "true" : "false");
+      chip.addEventListener("click", function(){ selectUnit(u); });
+      row.appendChild(chip);
+    });
+  }
+
+  function newQuestion(){
+    var list = pool(activeTab, activeGrade, activeUnit);
+    if(list.length === 0){
+      document.getElementById("qText").textContent = "この条件の問題はまだないよ。学年か単元をかえてみてね。";
+      document.getElementById("choices").innerHTML = "";
+      return;
+    }
+    var q;
+    do { q = list[Math.floor(Math.random()*list.length)]; }
+    while(list.length > 1 && lastQ && q.text === lastQ.text);
+    lastQ = q;
+    qCounter++;
+
+    document.getElementById("subjectChip").textContent = SUBJECT_LABEL[q.subject] + " ・ " + GRADE_LABEL[q.grade] + " ・ " + q.unit;
+    document.getElementById("qIndex").textContent = qCounter;
+    document.getElementById("qText").textContent = q.text;
+
+    var order = shuffle([0,1,2,3]);
+    currentAnswerCorrectText = q.choices[0];
+    var currentExplanation = q.explanation;
+
+    var wrap = document.getElementById("choices");
+    wrap.innerHTML = "";
+    order.forEach(function(origIdx){
+      var btn = document.createElement("button");
+      btn.className = "choice"; btn.type = "button";
+      btn.textContent = q.choices[origIdx];
+      btn.addEventListener("click", function(){ onAnswer(btn, origIdx === 0, wrap, currentExplanation); });
+      wrap.appendChild(btn);
+    });
+
+    document.getElementById("feedback").className = "feedback";
+    document.getElementById("nextBtn").className = "next-btn";
+  }
+
+  function onAnswer(btn, isCorrect, wrap, explanation){
+    var buttons = wrap.querySelectorAll(".choice");
+    buttons.forEach(function(b){ b.disabled = true; if(b.textContent === currentAnswerCorrectText) b.classList.add("correct"); });
+    if(!isCorrect) btn.classList.add("wrong");
+
+    var beforeStage = stageOf(state.exp);
+    state.total++;
+    if(isCorrect){
+      state.correct++; state.streak++;
+      state.exp += 10 + Math.min(state.streak-1, 5)*2;
+      state.stampCount++;
+    } else {
+      state.streak = 0; state.exp += 2;
+    }
+    saveState();
+
+    var fb = document.getElementById("feedback");
+    var fstamp = document.getElementById("fstamp");
+    var ftext = document.getElementById("feedbackText");
+    var explainEl = document.getElementById("explainText");
+
+    if(isCorrect){
+      fb.className = "feedback show ok";
+      fstamp.textContent = "合";
+      ftext.textContent = state.streak >= 3 ? ("せいかい！ " + state.streak + "連続、ノリノリだね") : "せいかい！";
+    } else {
+      fb.className = "feedback show ng";
+      fstamp.textContent = "惜";
+      ftext.textContent = "おしい、正解は「" + currentAnswerCorrectText + "」だよ";
+    }
+    explainEl.innerHTML = explanation ? ("<b>解説　</b>" + explanation) : "";
+
+    document.getElementById("nextBtn").className = "next-btn show";
+    renderAll(isCorrect);
+
+    var afterStage = stageOf(state.exp);
+    if(afterStage > beforeStage){
+      var toast = document.getElementById("evolveToast");
+      toast.textContent = "そだてもんが「" + STAGES[afterStage].name + "」に育った！";
+      toast.className = "evolve-toast show";
+      setTimeout(function(){ toast.className = "evolve-toast"; }, 2600);
+    }
+  }
+
+  function fillAddqUnits(){
+    var subj = document.getElementById("addqSubject").value;
+    var grade = document.getElementById("addqGrade").value;
+    var sel = document.getElementById("addqUnit");
+    var keep = sel.value;
+    sel.innerHTML = "";
+    var units = Object.keys((BANK[subj] && BANK[subj][grade]) || {});
+    units.forEach(function(u){ var opt = document.createElement("option"); opt.value = u; opt.textContent = u; sel.appendChild(opt); });
+    var custom_opt = document.createElement("option");
+    custom_opt.value = "自由追加"; custom_opt.textContent = "自由追加（その他）";
+    sel.appendChild(custom_opt);
+    if(units.indexOf(keep) !== -1) sel.value = keep;
+  }
+
+  function renderCustomList(){
+    var box = document.getElementById("customItems");
+    box.innerHTML = "";
+    var all = [];
+    ["eng","math","soc"].forEach(function(s){ (custom[s]||[]).forEach(function(c){ all.push(c); }); });
+    if(all.length === 0){
+      var e = document.createElement("div");
+      e.className = "custom-empty";
+      e.textContent = "まだ追加した問題はないよ。";
+      box.appendChild(e);
+      return;
+    }
+    all.forEach(function(c){
+      var row = document.createElement("div");
+      row.className = "custom-item";
+      var meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = "[" + SUBJECT_LABEL[c.subject] + "・" + GRADE_LABEL[c.grade] + "・" + c.unit + "]";
+      var txt = document.createElement("span");
+      txt.className = "txt";
+      txt.textContent = c.text;
+      var del = document.createElement("button");
+      del.type = "button"; del.className = "del"; del.textContent = "×";
+      del.title = "この問題を削除";
+      del.addEventListener("click", function(){ deleteCustom(c.subject, c.id); });
+      row.appendChild(meta); row.appendChild(txt); row.appendChild(del);
+      box.appendChild(row);
+    });
+  }
+
+  function deleteCustom(subject, id){
+    custom[subject] = (custom[subject]||[]).filter(function(c){ return c.id !== id; });
+    saveCustom();
+    renderCustomList();
+    if(lastQ && lastQ.subject === subject) { lastQ = null; newQuestion(); }
+  }
+
+  function selectUnit(u){ activeUnit = u; renderUnitRow(); newQuestion(); }
+
+  function selectGrade(g){
+    activeGrade = g;
+    activeUnit = "__all__";
+    renderGradeRow();
+    renderUnitRow();
+    newQuestion();
+  }
+
+  function selectTab(k){
+    activeTab = k;
+    activeUnit = "__all__";
+    document.querySelectorAll(".tab").forEach(function(t){ t.setAttribute("aria-selected", t.dataset.k === k ? "true" : "false"); });
+    if(k !== "all") document.getElementById("addqSubject").value = k;
+    fillAddqUnits();
+    renderUnitRow();
+    lastQ = null;
+    newQuestion();
+  }
+
+  document.querySelectorAll(".tab").forEach(function(t){ t.addEventListener("click", function(){ selectTab(t.dataset.k); }); });
+  document.getElementById("nextBtn").addEventListener("click", newQuestion);
+  document.getElementById("addqSubject").addEventListener("change", fillAddqUnits);
+  document.getElementById("addqGrade").addEventListener("change", fillAddqUnits);
+
+  document.getElementById("addqForm").addEventListener("submit", function(e){
+    e.preventDefault();
+    var subj = document.getElementById("addqSubject").value;
+    var grade = document.getElementById("addqGrade").value;
+    var unit = document.getElementById("addqUnit").value;
+    var text = document.getElementById("addqText").value.trim();
+    var explain = document.getElementById("addqExplain").value.trim();
+    var inputs = e.target.querySelectorAll(".addq-choice input");
+    var choices = Array.prototype.map.call(inputs, function(i){ return i.value.trim(); });
+    if(!text || choices.some(function(c){ return !c; })) return;
+    if(!custom[subj]) custom[subj] = [];
+    custom[subj].push({ id: Date.now() + "-" + Math.floor(Math.random()*10000), grade:grade, unit:unit, text:text, choices:choices, explanation:explain });
+    saveCustom();
+    renderCustomList();
+    document.getElementById("addqMsg").textContent = "追加したよ（" + SUBJECT_LABEL[subj] + "・" + GRADE_LABEL[grade] + "・" + unit + "）";
+
+    var subjSel = subj, gradeSel = grade, unitSel = unit;
+    e.target.reset();
+    document.getElementById("addqSubject").value = subjSel;
+    document.getElementById("addqGrade").value = gradeSel;
+    fillAddqUnits();
+    document.getElementById("addqUnit").value = unitSel;
+
+    if((activeTab === "all" || activeTab === subj) && (activeGrade === "all" || activeGrade === grade)) renderUnitRow();
+  });
+
+  fillAddqUnits();
+  renderCustomList();
+  renderAll(false);
+  renderGradeRow();
+  selectTab("all");
+})();
+</script>

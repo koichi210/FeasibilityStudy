@@ -1,0 +1,9 @@
+# バックアップzip（gitで管理済みなので二重管理しない）
+_backups/
+
+# OS / エディタ
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/

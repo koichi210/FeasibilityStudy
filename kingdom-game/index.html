@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>陣形と城壁（仮）</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<section id="screen-title" class="screen">
+  <div class="title-box">
+    <h1>⚔️ 陣形と城壁（仮）</h1>
+    <p class="subtitle">陣形バトル＆攻城戦の戦術シミュレーション</p>
+    <div class="title-buttons">
+      <button id="start-btn" class="big-btn">はじめる（中華編）</button>
+      <button id="history-btn" class="big-btn">歴史編（日本合戦史）</button>
+      <button id="conquest-btn" class="big-btn">国盗り編（戦国日本）</button>
+      <button id="formation-btn" class="big-btn">編成</button>
+    </div>
+  </div>
+</section>
+
+<section id="screen-stage-select" class="screen" hidden>
+  <div class="screen-header">
+    <h2 id="stage-select-title">ステージ選択</h2>
+    <button id="title-back-btn" class="action-btn">タイトルへ</button>
+  </div>
+  <div id="stage-list" class="stage-list"></div>
+</section>
+
+<section id="screen-history-brief" class="screen" hidden>
+  <div class="result-box">
+    <div id="history-brief-title" class="result-title"></div>
+    <p id="history-brief-text" class="history-text"></p>
+    <div class="action-buttons">
+      <button id="history-start-btn" class="action-btn">合戦開始</button>
+      <button id="history-back-btn" class="action-btn cancel-btn">戻る</button>
+    </div>
+  </div>
+</section>
+
+<section id="screen-conquest" class="screen" hidden>
+  <div id="conquest-root"></div>
+</section>
+
+<section id="screen-formation" class="screen" hidden>
+  <div class="screen-header">
+    <h2>編成</h2>
+    <button id="formation-back-btn" class="action-btn">タイトルへ</button>
+  </div>
+  <div id="formation-root"></div>
+</section>
+
+<section id="screen-battle" class="screen" hidden>
+  <div id="battle-root"></div>
+</section>
+
+<section id="screen-result" class="screen" hidden>
+  <div id="result-box" class="result-box"></div>
+</section>
+
+<script src="js/util.js"></script>
+<script src="js/units.js"></script>
+<script src="js/characters.js"></script>
+<script src="js/castles.js"></script>
+<script src="js/board.js"></script>
+<script src="js/siege.js"></script>
+<script src="js/stages.js"></script>
+<script src="js/history-stages.js"></script>
+<script src="js/provinces.js"></script>
+<script src="js/battle.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/save.js"></script>
+<script src="js/roster.js"></script>
+<script src="js/conquest.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/conquest-ui.js"></script>
+<script src="js/formation-ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

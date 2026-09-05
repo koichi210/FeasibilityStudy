@@ -492,6 +492,41 @@ class Game:
         acts.append({"type": "end_turn", "label": "⏭️ ターン終了"})
         return acts
 
+    def _can_attack_with(self, m: Optional[Monster], o: Player) -> bool:
+        """そのモンスターがバトル場にいたとして、いま攻撃できるか。"""
+        if m is None or not m.can_attack:      # 疲労中は撃てない
+            return False
+        if m.is_demon and o.battle and o.battle.is_demon:   # 魔王同士は不可
+            return False
+        return True
+
+    def attack_chance(self, idx: int) -> Optional[str]:
+        """このターン、まだ攻撃を出せる余地があるかを返す。
+
+        ターン終了の押し忘れ警告に使う。1ターンに1回しかない攻撃を
+        使わずに終わるのはもったいないので、画面側が引き止められるようにする。
+
+          "now"        … いますぐ攻撃できる
+          "after_swap" … バトル場は疲労中などで撃てないが、
+                         ベンチと交代すれば撃てる（交代しても攻撃権は残る）
+          None         … どう頑張ってもこのターンは攻撃できない
+
+        ※ 気付け薬で疲労を治す道もあるが、そこまで数えると
+          「アイテムを持っているだけで毎回警告が出る」ので含めない。
+        """
+        if idx != self.current:
+            return None
+        p, o = self.players[idx], self.players[1 - idx]
+        if p.attacked:
+            return None
+        if p.battle and self._can_attack_with(p.battle, o):
+            return "now"
+        if p.swaps_left > 0:
+            for m in p.bench:
+                if self._can_attack_with(m, o):
+                    return "after_swap"
+        return None
+
     def _item_usable(self, p: Player, o: Player, c: Card) -> bool:
         t = c.effect.type
         if t in ("heal", "full_heal", "weapon", "armor", "weapon_cursed",
@@ -918,4 +953,7 @@ class Game:
             "log": [e.text for e in self.log
                     if e.private_to is None or e.private_to == viewer][-60:],
             "fx": self.fx,
+            # まだ攻撃を出せる余地があるか（"now" / "after_swap" / None）。
+            # 画面がターン終了の押し忘れを引き止めるのに使う。
+            "attack_chance": self.attack_chance(viewer),
         }

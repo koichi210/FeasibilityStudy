@@ -217,7 +217,7 @@ async function poll() {
     return;
   }
   if (v.room.waiting) return;   // まだ待機中
-  render();
+  await renderAfterFx();
 }
 
 async function send(action) {
@@ -228,7 +228,9 @@ async function send(action) {
   try {
     STATE = await api("/api/room/action",
       { code: SESSION.code, token: SESSION.token, action: action });
-    render();
+    // 前の攻撃の余韻が消えるまで待ってから次の盤面を出す。
+    // 待たないと殴り合いが重なって、どちらが何をしたのか分からなくなる。
+    await renderAfterFx();
   } catch (e) {
     showToast(e.message);
   } finally {
@@ -687,10 +689,46 @@ function render() {
 
   // --- 操作ボタン ---
   const atk = (byType.attack || [])[0];
-  $("attackBtn").disabled = !atk;
-  $("attackBtn").textContent = atk ? atk.label : "⚔️ 攻撃";
-  $("endTurnBtn").disabled = !(byType.end_turn || []).length;
-  $("actHint").textContent = hintText(STATE, me, byType);
+  const atkBtn = $("attackBtn");
+  atkBtn.disabled = !atk;
+  // 押せないときは「なぜ押せないか」をボタン自身に書く。
+  // 疲労で撃てないのか、もう撃ったのかがボタンを見ただけで分かるように。
+  atkBtn.textContent = atk ? atk.label : attackBlockedLabel(STATE, me);
+  atkBtn.title = atk ? "" : atkBtn.textContent;
+
+  const canEnd = !!(byType.end_turn || []).length;
+  const endBtn = $("endTurnBtn");
+  endBtn.disabled = !canEnd;
+
+  // ターン終了ボタンは信号機のように色で状況を伝える。
+  //   🔴 赤   … 攻撃を残している。押すのはもったいない
+  //   🟢 緑   … 攻撃は済んだ。まだ他にできる事はある
+  //   🟡 金色 … もう何もできない。押してほしい（脈打たせる）
+  // 常に光らせると見慣れて効かなくなるので、意味のあるときだけ色を付ける。
+  const canDoSomething = !!(atk || (byType.place || []).length ||
+                            (byType.item || []).length || (byType.swap || []).length);
+  const chance = STATE.attack_chance;      // "now" / "after_swap" / null
+  const hintEl = $("actHint");
+  endBtn.classList.remove("nudge", "urge", "warn");
+  hintEl.classList.remove("urge");
+
+  let endLabel = "⏭️ ターン終了";
+  if (canEnd && STATE.is_my_turn) {
+    if (chance) {
+      endBtn.classList.add("warn");
+      endLabel = chance === "after_swap"
+        ? "⏭️ ターン終了（交代すればまだ攻撃できます）"
+        : "⏭️ ターン終了（まだ攻撃していません）";
+    } else if (!canDoSomething) {
+      endBtn.classList.add("urge");
+      endLabel = "⏭️ ターン終了（もうできる事はありません）";
+      hintEl.classList.add("urge");
+    } else if (me.attacked) {
+      endBtn.classList.add("nudge");
+    }
+  }
+  endBtn.textContent = endLabel;
+  hintEl.textContent = hintText(STATE, me, byType);
 
   // --- ログ ---
   const logBox = $("logList");
@@ -733,8 +771,34 @@ function render() {
    - 出てきた … ふわっと浮かび上がらせる
    - 消えた   … 幽霊を残して2秒かけてゆっくり消す（何が退場したか見える）        */
 
-const MOVE_MS = 550;    // 移動にかける時間
-const GHOST_MS = 2000;  // 消えるカードが薄れて消えるまでの時間
+const MOVE_MS = 1000;   // 移動にかける時間（経路が見える程度に、もたつかない速さ）
+const GHOST_MS = 1000;  // 消えるカードが薄れて消えるまでの時間
+const CLAW_MS = 1500;   // 爪痕が走って消えるまで（style.css の clawSlash と揃えること）
+const SHAKE_MS = 1000;  // 攻撃モーションの長さ（style.css の attackShake と揃えること）
+const FX_HOLD_MAX = 2600;  // どんなに重なってもこれ以上は待たせない
+
+/* エフェクトの再生が終わる時刻。ここまでは次の盤面を出さずに待つ。
+   待たずに描くと、前の攻撃の余韻と次の攻撃が重なってしまい、
+   お互い同時に殴り合っているように見えてしまう。 */
+let fxUntil = 0;
+let renderTimer = null;
+
+function noteFx(ms) {
+  if (ms > 0) fxUntil = Math.max(fxUntil, Date.now() + Math.min(ms, FX_HOLD_MAX));
+}
+
+function renderAfterFx() {
+  return new Promise((resolve) => {
+    if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
+    const wait = fxUntil - Date.now();
+    if (wait <= 0) { render(); resolve(); return; }
+    renderTimer = setTimeout(() => {
+      renderTimer = null;
+      render();
+      resolve();
+    }, wait + 40);
+  });
+}
 
 /* 攻撃モーション・被弾エフェクトは「1回の攻撃につき1回だけ」再生する。
    盤面はカーソル操作などでも描き直されるので、そのたびに揺れないよう
@@ -771,6 +835,10 @@ function animateCards(before) {
   document.querySelectorAll("[data-cardkey]").forEach((el) => {
     now[el.dataset.cardkey] = el;
   });
+
+  // 今回の描き直しで、いちばん長く残るエフェクトの時間を数えておく。
+  // 次の盤面はこれが終わるまで待たせる。
+  let hold = fxIsNew() ? Math.max(SHAKE_MS, CLAW_MS) : 0;
 
   Object.keys(now).forEach((key) => {
     const el = now[key];
@@ -814,9 +882,10 @@ function animateCards(before) {
     el.style.transformOrigin = "50% 50%";
     el.style.transform =
       "translate(" + dx + "px, " + dy + "px)" + (scaled ? " scale(" + scale + ")" : "");
-    el.style.zIndex = "40";
+    // 抜け殻(#ghostLayer=18)や他のカードより手前を通す。移動が隠れないように。
+    el.style.zIndex = "35";
     requestAnimationFrame(() => {
-      el.style.transition = "transform " + MOVE_MS + "ms cubic-bezier(.22,.68,.3,1.1)";
+      el.style.transition = "transform " + MOVE_MS + "ms cubic-bezier(.25,.6,.3,1)";
       el.style.transform = "";
       setTimeout(() => {
         el.style.transition = "";
@@ -826,13 +895,18 @@ function animateCards(before) {
     });
     // 移動しきってからダメージを受ける
     applyPendingFx(el, MOVE_MS + 60);
+    // 移動そのもの＋そのあと走る爪痕までが今回の見せ場
+    hold = Math.max(hold, MOVE_MS + (el.dataset.fxafter ? CLAW_MS : 0));
   });
 
   // 場から消えたカードは、抜け殻をその場に残してゆっくり薄れさせる
   Object.keys(before).forEach((key) => {
     if (now[key] || before[key].used) return;
     spawnGhost(before[key]);
+    hold = Math.max(hold, GHOST_MS);
   });
+
+  noteFx(hold + 120);   // 少し余韻を残してから次の盤面へ
 }
 
 /* 控えておいた被弾演出（点滅・爪痕）を実際に発動させる。
@@ -882,12 +956,41 @@ function optionSummary() {
   return off.length ? "⚙️ " + off.join("・") : "";
 }
 
+/* 攻撃ボタンが押せないとき、その理由を書いた文言を返す。
+   「疲労で撃てない」のか「もう撃った」のかは盤面から読み取りにくいので、
+   ボタンそのものに書いてしまうのが一番分かりやすい。
+   判定の順番は engine の legal_actions と同じにしてある。 */
+function attackBlockedLabel(st, me) {
+  if (!st.is_my_turn) return "⚔️ 攻撃（相手の番）";
+  if (!me.battle) return "⚔️ 攻撃（バトル場が空）";
+  if (me.attacked) return "✅ このターンは攻撃済み";
+  if (me.battle.fatigue > 0) {
+    return "😴 疲労中（あと" + me.battle.fatigue + "ターン攻撃できない）";
+  }
+  return "⚔️ 攻撃（いまは攻撃できない）";
+}
+
 function hintText(st, me, byType) {
   if (st.winner !== null && st.winner !== undefined) return "ゲーム終了";
   if (!st.is_my_turn) {
     return st.room && st.room.mode === "lan"
       ? "相手の番です。待ってね…" : "CPUが考え中…";
   }
+  // できる事が何も残っていないなら、真っ先にそれを伝える
+  const canDoSomething = (byType.attack || []).length || (byType.place || []).length ||
+                         (byType.item || []).length || (byType.swap || []).length;
+  if (!canDoSomething && (byType.end_turn || []).length) {
+    return "👉 もうできる事はありません。「ターン終了」を押してね";
+  }
+
+  // 攻撃を残したまま終わりそうなときは、それを最優先で知らせる
+  if (st.attack_chance === "after_swap") {
+    return "⚠️ バトル場は攻撃できないけど、ベンチと交代すればまだ攻撃できるよ";
+  }
+  if (st.attack_chance === "now") {
+    return "⚔️ まだ攻撃していません";
+  }
+
   const bits = [];
   if ((byType.place || []).length) bits.push("🃏 配置できるモンスターがいます");
   if (me.battle && me.battle.fatigue > 0) bits.push("バトル場は疲労中（攻撃できない）");
@@ -896,6 +999,7 @@ function hintText(st, me, byType) {
   if (!byType.attack && me.battle && me.battle.fatigue <= 0 && me.attacked) {
     bits.push("このターンはもう攻撃済み");
   }
+  if (me.attacked) bits.push("⏭️ 終わったら「ターン終了」を押してね");
   return bits.join(" / ") || "行動を選んでね";
 }
 
@@ -1025,7 +1129,19 @@ async function applyOptions() {
 
 /* ============================================================== 起動 */
 $("attackBtn").addEventListener("click", () => send({ type: "attack" }));
-$("endTurnBtn").addEventListener("click", () => send({ type: "end_turn" }));
+$("endTurnBtn").addEventListener("click", () => {
+  // 攻撃は1ターンに1回きり。使わずに終わるのはもったいないので引き止める。
+  // 「交代すれば撃てる」場合も対象（交代しても攻撃権は残るため）。
+  // どう頑張っても撃てないターンは、聞いても仕方がないので黙って終了する。
+  const chance = STATE.attack_chance;
+  if (chance) {
+    const msg = chance === "after_swap"
+      ? "まだ攻撃していません。\nベンチと交代すれば、このターンまだ攻撃できます。\n\nこのままターンを終了しますか？"
+      : "まだ攻撃していません。\n\nこのままターンを終了しますか？";
+    if (!confirm(msg)) return;
+  }
+  send({ type: "end_turn" });
+});
 $("newGameBtn").addEventListener("click", () => rematch(null));
 $("ovBtn").addEventListener("click", () => rematch(null));
 $("leaveBtn").addEventListener("click", leaveRoom);

@@ -222,7 +222,7 @@ ITEM_FACE: Dict[str, ItemEffect] = {
                      cry="女神よ、我にその加護を！"),
     "HK": ItemEffect("full_heal", 0, "完全回復：バトル場のHPを全回復",
                      cry="甦れ、我が魂の器よ！"),
-    "HA": ItemEffect("revive", 0, "蘇生の秘薬：捨て札のモンスター1体をベンチに戻す",
+    "HA": ItemEffect("revive", 0, "蘇生の秘薬：捨て札のモンスター1体をモンスター手札に戻す",
                      cry="死者の眠りを破れ、いま一度この地に還れ！"),
     # ♦ 武器
     "DJ": ItemEffect("weapon", IV["D_J_weapon"], "鋭い刃：攻撃+{}（装備）".format(IV["D_J_weapon"]),

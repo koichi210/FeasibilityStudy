@@ -865,8 +865,13 @@ function beginFxFrame() {
   if (fxFresh) showCallout(STATE.fx);
 }
 
-/* 画面中央に、使ったアイテム名や攻撃の口上を大きく出す。
-   ログは流れて見落とすので、その瞬間だけ主役を張らせる。 */
+/* 画面上部に、使ったアイテム名や攻撃の口上を大きく出す。
+   ログは流れて見落とすので、その瞬間だけ主役を張らせる。
+
+   これは読ませるための表示なので長めに出すが、
+   進行は止めない（攻撃モーションは裏で進み、次の手にも移ってよい）。
+   fx の待ち時間（animateCards の hold）には含めていない。 */
+const CALLOUT_MS = 4000;
 let calloutTimer = null;
 
 function showCallout(fx) {
@@ -881,7 +886,7 @@ function showCallout(fx) {
   void box.offsetWidth;
   box.classList.add("show");
   if (calloutTimer) clearTimeout(calloutTimer);
-  calloutTimer = setTimeout(() => box.classList.remove("show"), 1600);
+  calloutTimer = setTimeout(() => box.classList.remove("show"), CALLOUT_MS);
 }
 
 function snapshotCards() {

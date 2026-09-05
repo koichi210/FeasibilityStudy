@@ -98,6 +98,9 @@ class Monster:
     ability_enabled: bool = True   # 「技なし」オプション時は False
     bench_turns_left: Optional[int] = None  # 聖女クイーン・指揮官キング専用：
                                              # ベンチにいられる残りターン（None＝対象外）
+    # 一度でもバトル場に出たか。出た時点で相手に見られているので、
+    # そのあとベンチに下がっても伏せ札には戻さない（隠す意味がないため）。
+    revealed: bool = False
 
     @property
     def ability_id(self) -> Optional[str]:
@@ -335,7 +338,7 @@ class Game:
             if candidates and (instant or p.is_cpu):
                 i, m = max(candidates, key=lambda t: (t[1].hp, t[1].base_atk))
                 p.bench[i] = None
-                p.battle = m
+                self._stand_battle(p, m)
                 if not silent:
                     self._say("🔀 {}：ベンチの {} がバトル場へ".format(p.name, self._nm(m)))
             elif candidates and self.winner is None:
@@ -348,7 +351,7 @@ class Game:
             elif instant:
                 card = self._draw_monster(p)
                 if card:
-                    p.battle = self._spawn(p, card)
+                    self._stand_battle(p, self._spawn(p, card))
                     if not silent:
                         self._say("🆕 {}：バトル場に {} が登場".format(p.name, self._nm(p.battle)))
                     self._on_enter(p, p.battle, silent)
@@ -373,6 +376,12 @@ class Game:
         # （誰かが出て埋まった／ベンチも全滅して選べるものが無い）
         if p.idx in self.pending_promote and (p.battle is not None or not any(p.bench)):
             self.pending_promote.remove(p.idx)
+
+    def _stand_battle(self, p: Player, m: Optional[Monster]):
+        """バトル場に立たせる。立った時点で相手に見られたことにする。"""
+        p.battle = m
+        if m:
+            m.revealed = True
 
     def pending_seat(self) -> Optional[int]:
         """いま「ベンチの誰を出すか」を選ぶ番の席。誰も待っていなければ None。"""
@@ -620,7 +629,9 @@ class Game:
         if t == "draw_items":
             return len(p.hand) < B["hand_size_max"]
         if t == "revive":
-            return any(x.kind == "monster" for x in p.discard) and any(m is None for m in p.bench)
+            # 戻す先はモンスター手札なので、ベンチの空きではなく手札の空きを見る
+            return (any(x.kind == "monster" for x in p.discard)
+                    and len(p.monster_hand) < B["monster_hand_size_max"])
         return True
 
     def _do_promote(self, action: dict) -> bool:
@@ -634,7 +645,7 @@ class Game:
             return False
         m = p.bench[i]
         p.bench[i] = None
-        p.battle = m
+        self._stand_battle(p, m)
         self.pending_promote.remove(seat)
         # バトル場は公開領域なので、カード名を出してよい
         self._say("🔀 {}：ベンチの {} をバトル場へ出した".format(p.name, self._nm(m)))
@@ -672,7 +683,9 @@ class Game:
             if p.swaps_left <= 0 or not (0 <= i < len(p.bench)) or p.bench[i] is None:
                 return False
             p.swaps_left -= 1
-            p.battle, p.bench[i] = p.bench[i], p.battle
+            coming = p.bench[i]
+            p.bench[i] = p.battle
+            self._stand_battle(p, coming)
             self._say("🔄 {}：{} と交代".format(p.name, self._nm(p.battle)))
         elif t == "place":
             i = action.get("hand", -1)
@@ -683,7 +696,7 @@ class Game:
                 if p.battle is not None:
                     return False
                 card = p.monster_hand.pop(i)
-                p.battle = self._spawn(p, card)
+                self._stand_battle(p, self._spawn(p, card))
                 self._say("🆕 {}：バトル場に {} が登場".format(p.name, self._nm(p.battle)))
                 self._on_enter(p, p.battle)
             elif isinstance(slot, int) and 0 <= slot < len(p.bench) and p.bench[slot] is None:
@@ -1029,9 +1042,14 @@ class Game:
         op = self.players[1 - viewer]
 
         def side(p: Player, hide_hand: bool) -> dict:
-            bench_view = ([({"hidden": True} if m else None) for m in p.bench]
-                          if hide_hand else
-                          [m.to_dict() if m else None for m in p.bench])
+            # ベンチは伏せ札。ただし一度バトル場に出たカードは既に見られているので、
+            # ベンチへ下がってもそのまま見せる（隠しても意味がないため）。
+            if hide_hand:
+                bench_view = [(m.to_dict() if (m and m.revealed)
+                               else ({"hidden": True} if m else None))
+                              for m in p.bench]
+            else:
+                bench_view = [m.to_dict() if m else None for m in p.bench]
             # ベンチの支援カード（指揮官キング・聖女クイーン）による一時バフ。
             # atk_now / def_now には含めず、増分を別に渡して画面で「30(+30)」と出す。
             battle_view = p.battle.to_dict() if p.battle else None

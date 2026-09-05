@@ -207,6 +207,10 @@ class Game:
         # 相手のターン中に倒されることもあるので、手番とは独立して持つ。
         # 選び終わるまで、ほかの操作は受け付けない（両者が待つ）。
         self.pending_promote: List[int] = []
+        # 「めくった中から選ぶ」待ち。蘇生・号令・賢者の杖で使う。
+        # {"seat", "kind", "title", "cards", "picks", "to"} の形。
+        # 選び終わるまで他の操作は止める（自分のターン中にしか起きない）。
+        self.pending_choice: Optional[dict] = None
         self.players = [
             Player(idx=i, name=names[i], is_cpu=cpu[i],
                    trainer_hp=B["trainer_hp"], trainer_hp_max=B["trainer_hp"],
@@ -307,6 +311,16 @@ class Game:
         p.hand.append(c)
         return c
 
+    def _pop_item(self) -> Optional[Card]:
+        """アイテム山札から1枚取り出す（手札には入れない）。めくって選ばせる用。"""
+        if not self.item_deck:
+            if not self.item_discard:
+                return None
+            self.item_deck = self.item_discard
+            self.item_discard = []
+            self.rng.shuffle(self.item_deck)
+        return self.item_deck.pop() if self.item_deck else None
+
     def _spawn(self, p: Player, card: Card) -> Monster:
         m = Monster(card=card, uid=self._next_uid(),
                     hp=B["monster_hp"], hp_max=B["monster_hp"],
@@ -388,9 +402,16 @@ class Game:
         return self.pending_promote[0] if self.pending_promote else None
 
     def waiting_for_human_choice(self) -> bool:
-        """人間の選択待ちで進行を止めるべきか（CPUを走らせる側が見る）。"""
-        seat = self.pending_seat()
-        return seat is not None and not self.players[seat].is_cpu
+        """人間の選択待ちで進行を止めるべきか（CPUを走らせる側が見る）。
+
+        繰り上げ（pending_promote）と、めくったカードの選択（pending_choice）の
+        どちらも対象。どちらか一方でも待っている間は、CPUを進めてはいけない。
+        """
+        for seat in (self.pending_seat(),
+                     self.pending_choice["seat"] if self.pending_choice else None):
+            if seat is not None and not self.players[seat].is_cpu:
+                return True
+        return False
 
     def _draw_monster_to_hand(self, p: Player, silent: bool = False) -> Optional[Card]:
         """モンスター手札にターン開始時1枚だけ引く（アイテム手札と同じ方式）。
@@ -520,6 +541,15 @@ class Game:
             return []
         idx = self.current if idx is None else idx
 
+        # めくったカードの選択待ち。自分のターン中にしか起きない。
+        ch = self.pending_choice
+        if ch:
+            if idx != ch["seat"]:
+                return []
+            return [{"type": "pick", "index": i,
+                     "label": "🎴 {}{} を選ぶ".format(c.label, c.name)}
+                    for i, c in enumerate(ch["cards"])]
+
         # バトル場の繰り上げ待ちが最優先。選び終わるまで他の操作はできない。
         # 相手のターン中に倒された場合もここに入るので、手番は見ない。
         pend = self.pending_seat()
@@ -634,6 +664,84 @@ class Game:
                     and len(p.monster_hand) < B["monster_hand_size_max"])
         return True
 
+    # -------------------------------------------------- めくって選ぶ（アイテム）
+    def _begin_choice(self, p: Player, kind: str, title: str,
+                      cards: List[Card], picks: int, to: str):
+        """候補カードを見せて、その中から選んでもらう状態に入る。
+
+        cards はすでに山札／捨て札から取り出してある前提。
+        選ばれなかったぶんは `_finish_choice` が元へ戻す。
+        CPU は待たせても仕方がないので、その場で自動的に選ぶ。
+        """
+        if not cards:
+            return
+        picks = min(picks, len(cards))
+        self.pending_choice = {"seat": p.idx, "kind": kind, "title": title,
+                               "cards": list(cards), "picks": picks, "to": to}
+        if p.is_cpu:
+            while self.pending_choice:
+                self._do_pick({"index": self._cpu_best_pick()})
+            return
+        self._say("🤔 {}：{}".format(p.name, title))
+
+    def _cpu_best_pick(self) -> int:
+        """CPU の選び方。モンスターは強いもの、アイテムは適当に先頭。"""
+        cards = self.pending_choice["cards"]
+        best, bi = None, 0
+        for i, c in enumerate(cards):
+            score = c.atk + c.dfn if c.kind == "monster" else 0
+            if best is None or score > best:
+                best, bi = score, i
+        return bi
+
+    def _do_pick(self, action: dict) -> bool:
+        """めくった候補から1枚選ぶ。"""
+        ch = self.pending_choice
+        if not ch:
+            return False
+        i = action.get("index", -1)
+        if not (0 <= i < len(ch["cards"])):
+            return False
+        p = self.players[ch["seat"]]
+        card = ch["cards"].pop(i)
+
+        if ch["to"] == "monster_hand":
+            p.monster_hand.append(card)
+            self._say_hidden(
+                p,
+                "🃏 {} が {}{} を選んだ".format(p.name, card.label, card.name),
+                "🃏 {} がモンスターを1枚選んだ".format(p.name))
+        else:                                   # アイテム手札
+            p.hand.append(card)
+            self._say_hidden(
+                p,
+                "🎒 {} が {}{} を選んだ".format(p.name, card.label, card.name),
+                "🎒 {} がアイテムを1枚選んだ".format(p.name))
+
+        ch["picks"] -= 1
+        if ch["picks"] <= 0 or not ch["cards"]:
+            self._finish_choice()
+        return True
+
+    def _finish_choice(self):
+        """選ばれなかったカードを元へ戻して、選択待ちを終える。"""
+        ch = self.pending_choice
+        self.pending_choice = None
+        if not ch:
+            return
+        rest = ch["cards"]
+        if not rest:
+            return
+        p = self.players[ch["seat"]]
+        if ch["kind"] == "revive":
+            p.discard.extend(rest)              # 捨て札はそのまま戻す
+        elif ch["to"] == "monster_hand":
+            p.deck.extend(rest)                 # 山札へ戻して混ぜる
+            self.rng.shuffle(p.deck)
+        else:
+            self.item_deck.extend(rest)
+            self.rng.shuffle(self.item_deck)
+
     def _do_promote(self, action: dict) -> bool:
         """空いたバトル場に、選ばれたベンチのモンスターを繰り上げる。"""
         seat = self.pending_seat()
@@ -656,6 +764,12 @@ class Game:
     def apply_action(self, action: dict) -> bool:
         if self.winner is not None:
             return False
+
+        # めくったカードの選択が最優先
+        if action.get("type") == "pick":
+            return self._do_pick(action)
+        if self.pending_choice:
+            return False      # 選び終わるまで他の操作は止める
 
         # バトル場の繰り上げ選択。相手のターン中にも起こるので、
         # 手番を見ずに、選ぶ権利のある人の操作として先に処理する。
@@ -960,36 +1074,36 @@ class Game:
             p.swaps_left += 1
             self._say("🔄 交代権を1回追加")
         elif t == "deploy":
+            # 山札の上から数枚めくって、その中から選ぶ。
+            # 山札全部から選べると欲しいカードが必ず来てしまうので、候補を絞る。
             if len(p.monster_hand) >= B["monster_hand_size_max"]:
                 self._say("🚫 号令：モンスター手札が上限で追加できなかった")
             else:
-                card = self._draw_monster(p)
-                if card:
-                    p.monster_hand.append(card)
-                    self._say_hidden(
-                        p,
-                        "🃏 号令：{}{} をモンスター手札に追加".format(card.label, card.name),
-                        "🃏 号令：{} がモンスターを1枚手札に加えた".format(p.name))
+                look = [c for c in (self._draw_monster(p)
+                                    for _ in range(B["look_at_cards"])) if c]
+                self._begin_choice(p, "deploy",
+                                   "号令：めくった{}枚から1枚選ぶ".format(len(look)),
+                                   look, 1, "monster_hand")
         elif t == "draw_items":
-            n = 0
-            for _ in range(v):
-                if self._draw_item(p) is None:
+            look = []
+            for _ in range(B["look_at_cards"] + v):
+                c2 = self._pop_item()
+                if c2 is None:
                     break
-                n += 1
-            self._say("📜 アイテムを{}枚引いた".format(n))
+                look.append(c2)
+            self._begin_choice(p, "draw_items",
+                               "賢者の杖：めくった{}枚から{}枚選ぶ".format(len(look), v),
+                               look, v, "hand")
         elif t == "revive":
+            # 捨て札は中身が分かっているので、こちらは全部から自由に選べる
             if len(p.monster_hand) >= B["monster_hand_size_max"]:
                 self._say("🚫 蘇生：モンスター手札が上限で戻せなかった")
             else:
                 monsters = [x for x in p.discard if x.kind == "monster"]
-                if monsters:
-                    best = max(monsters, key=lambda x: x.atk + x.dfn)
-                    p.discard.remove(best)
-                    p.monster_hand.append(best)
-                    self._say_hidden(
-                        p,
-                        "🕊️ 蘇生：{}{} をモンスター手札に戻した".format(best.label, best.name),
-                        "🕊️ 蘇生：{} が捨て札からモンスターを1枚手札に戻した".format(p.name))
+                for x in monsters:
+                    p.discard.remove(x)
+                self._begin_choice(p, "revive", "蘇生：捨て札から1枚選ぶ",
+                                   monsters, 1, "monster_hand")
         elif t == "sacrifice":
             target = p.battle
             self._say("🩸 生贄の儀式：{} を捧げた".format(self._nm(target)))
@@ -1099,4 +1213,13 @@ class Game:
             "attack_chance": self.attack_chance(viewer),
             # バトル場の繰り上げを選ぶ番の席（誰も待っていなければ None）
             "pending_promote": self.pending_seat(),
+            # めくったカードの選択待ち。候補は本人にしか見せない
+            # （相手に見せると山札の中身が漏れてしまう）
+            "pending_choice": (
+                {"title": self.pending_choice["title"],
+                 "picks": self.pending_choice["picks"],
+                 "cards": [c.to_dict() for c in self.pending_choice["cards"]]}
+                if self.pending_choice and self.pending_choice["seat"] == viewer
+                else None),
+            "choice_waiting": bool(self.pending_choice),
         }

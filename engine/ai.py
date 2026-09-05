@@ -98,6 +98,12 @@ def _hand_power(p: Player, i: int) -> int:
     return c.atk + c.dfn
 
 
+def _bench_power(p: Player, i: int) -> int:
+    """ベンチのi番目の頼もしさ（バトル場へ繰り上げる相手を選ぶのに使う）。"""
+    m = p.bench[i] if 0 <= i < len(p.bench) else None
+    return (m.hp + m.base_atk) if m else -1
+
+
 def _can_finish_now(p: Player, o: Player) -> bool:
     """いま攻撃すれば、相手トレーナーを直接攻撃で倒し切れるかどうか（簡易判定）。
 
@@ -136,6 +142,15 @@ def choose_action(g: Game, level: str = DEFAULT_CPU_LEVEL) -> dict:
     by_type = {}
     for a in actions:
         by_type.setdefault(a["type"], []).append(a)
+
+    # 選択待ちのときは、それしかできない。まず片付ける。
+    # （CPU は engine 側で自動的に選ぶので普段ここへは来ないが、
+    #   来たときに手が無くて固まると進行が止まるので保険として残す）
+    if "pick" in by_type:
+        return by_type["pick"][0]
+    if "promote" in by_type:
+        return max(by_type["promote"],
+                   key=lambda a: _bench_power(p, a["bench"]))
 
     # 0) モンスターの配置：置かないと何も始まらないので最優先。
     #    バトル場が空いているならまずそこへ、一番強いものを出す。

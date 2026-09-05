@@ -806,6 +806,35 @@ function render() {
 
   // 描き終わったので、控えておいた位置と見比べて動きを付ける
   animateCards(cardsBefore);
+
+  renderChooser();
+}
+
+/* めくったカードから選ぶ画面。
+   候補は自分にしか届かないので、相手の山札の中身は漏れない。 */
+function renderChooser() {
+  const box = $("chooser");
+  const ch = STATE.pending_choice;
+  if (!ch) { box.classList.add("hidden"); return; }
+
+  $("chooserTitle").textContent =
+    ch.title + (ch.picks > 1 ? "（あと" + ch.picks + "枚）" : "");
+  const list = $("chooserCards");
+  list.innerHTML = "";
+  ch.cards.forEach((c, i) => {
+    const el = document.createElement("div");
+    el.className = "pickcard" + (RED_SUITS.has(c.suit) ? " red" : "");
+    const body = c.kind === "monster"
+      ? '<div class="pick-stats">⚔ ' + c.atk + "　🛡 " + c.dfn + "</div>" +
+        '<div class="pick-text">' + escapeHtml(c.ability ? c.ability.text : "技なし") + "</div>"
+      : '<div class="pick-text">' + escapeHtml(c.effect ? c.effect.text : "") + "</div>";
+    el.innerHTML =
+      '<div class="pick-head">' + c.mark + c.rank_label + "</div>" +
+      '<div class="pick-name">' + escapeHtml(c.name) + "</div>" + body;
+    el.addEventListener("click", () => send({ type: "pick", index: i }));
+    list.appendChild(el);
+  });
+  box.classList.remove("hidden");
 }
 
 /* ==================================================== カードの動きの演出

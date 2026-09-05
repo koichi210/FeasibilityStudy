@@ -16,11 +16,31 @@ import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from .cards import (BALANCE, Card, build_item_deck, build_monster_deck)
+from .cards import (BALANCE, Card, GOD_ARMY_KEYS, build_item_deck,
+                    build_monster_deck, make_god_monster)
 
 B = BALANCE
 AV = B["ability_values"]
 DEMON = B["demon_lord"]
+DIVINE = B["divine_army"]
+
+# 場に置いておくだけで味方全体を支え続けるカード。
+# 置きっぱなしで恒久的な効果になってしまうのを防ぐため、
+# ベンチ滞在ターン数に上限を設ける。
+#   H_Q_guard   … ベンチにいる間、バトル場の防御+
+#   C_K_command … ベンチにいる間、バトル場の攻撃+
+#   H_J_regen   … 毎ターン味方全体を回復（ベンチからでも効く）
+BENCH_LIMITED_ABILITIES = {"H_Q_guard", "C_K_command", "H_J_regen"}
+
+# アイテムを使ったときに光らせる色。効果の性質で3種類に分ける。
+#   attack … 相手を攻める（赤）
+#   heal   … 癒す（緑）
+#   buff   … 強化・小細工（青）※ここに無いものは buff 扱い
+ITEM_TONE = {
+    "burn": "attack", "poison": "attack", "stun": "attack",
+    "forbidden": "attack", "sacrifice": "attack",
+    "heal": "heal", "full_heal": "heal", "trainer_heal": "heal", "revive": "heal",
+}
 
 # ゲームオプション。新しいゲームを始めるときに指定する。
 #   monster_abilities … J/Q/K/A の特殊能力を使うか。オフだとルールがぐっと単純になる
@@ -34,6 +54,25 @@ OPTION_LABELS = {
     "monster_abilities": "モンスターの技",
     "demon_lord": "魔王（♠A）",
 }
+
+
+# ==========================================================================
+# ログ1行分
+# ==========================================================================
+@dataclass
+class LogEntry:
+    """ログ1行。private_to が席番号なら、その人にしか見せない行。
+
+    ベンチとモンスター手札の中身は相手に伏せているので、
+    それらのカード名を含む行は private_to 付きで積む。
+    view() が viewer ごとに絞ってから返すので、
+    通信を覗かれても相手には流れない。
+    """
+    text: str
+    private_to: Optional[int] = None
+
+    def __str__(self) -> str:   # simulate.py の print 用
+        return self.text
 
 
 # ==========================================================================
@@ -59,6 +98,11 @@ class Monster:
     is_demon: bool = False
     demon_turns: int = 0
     ability_enabled: bool = True   # 「技なし」オプション時は False
+    bench_turns_left: Optional[int] = None  # 聖女クイーン・指揮官キング専用：
+                                             # ベンチにいられる残りターン（None＝対象外）
+    # 一度でもバトル場に出たか。出た時点で相手に見られているので、
+    # そのあとベンチに下がっても伏せ札には戻さない（隠す意味がないため）。
+    revealed: bool = False
 
     @property
     def ability_id(self) -> Optional[str]:
@@ -89,6 +133,7 @@ class Monster:
             "is_demon": self.is_demon,
             "demon_turns": self.demon_turns,
             "revived": self.revived,
+            "bench_turns_left": self.bench_turns_left,
         })
         if self.is_demon:
             d["name"] = "魔王"
@@ -115,6 +160,10 @@ class Player:
     item_used: bool = False
     swaps_left: int = 0
     attacked: bool = False
+    # 呪縛：次の自分のターン、攻撃も交代もできない（アイテムだけ使える）。
+    # モンスター個体ではなくプレイヤーに掛ける。個体に掛けると
+    # ベンチと交代するだけで抜けられてしまうため。
+    stunned: bool = False
 
     def field_monsters(self) -> List[Monster]:
         out = []
@@ -151,7 +200,19 @@ class Game:
         self.current = 0
         self.winner: Optional[int] = None
         self.finish_reason = ""
-        self.log: List[str] = []
+        self.log: List[LogEntry] = []
+        # 直近の「見せ場」。画面が攻撃モーションや被弾エフェクトを出すのに使う。
+        # seq は再生済みかどうかの目印（同じ seq なら再生しない）。
+        self.fx: Optional[dict] = None
+        self.fx_seq = 0
+        # バトル場が空いて「ベンチの誰を出すか」の選択待ちになっている席。
+        # 相手のターン中に倒されることもあるので、手番とは独立して持つ。
+        # 選び終わるまで、ほかの操作は受け付けない（両者が待つ）。
+        self.pending_promote: List[int] = []
+        # 「めくった中から選ぶ」待ち。蘇生・号令・賢者の杖で使う。
+        # {"seat", "kind", "title", "cards", "picks", "to"} の形。
+        # 選び終わるまで他の操作は止める（自分のターン中にしか起きない）。
+        self.pending_choice: Optional[dict] = None
         self.players = [
             Player(idx=i, name=names[i], is_cpu=cpu[i],
                    trainer_hp=B["trainer_hp"], trainer_hp_max=B["trainer_hp"],
@@ -183,8 +244,45 @@ class Game:
         self.uid_seq += 1
         return self.uid_seq
 
-    def _say(self, msg: str):
-        self.log.append(msg)
+    def _say(self, msg: str, private_to: Optional[int] = None):
+        """ログを1行足す。
+
+        private_to に席番号を渡すと、その人の画面にだけ出る。
+        ベンチ・モンスター手札の中身は相手に伏せているので、
+        それらに触れる行は必ず private_to を付けること（付け忘れ＝情報漏洩）。
+        """
+        self.log.append(LogEntry(msg, private_to))
+
+    def _fx(self, kind: str, attacker: Optional[Monster] = None,
+            target: Optional[Monster] = None, title: str = "", cry: str = "",
+            tone: str = ""):
+        """画面に出す演出（攻撃モーション・被弾の爪痕）を1つ予約する。
+
+        ルールには影響しない。画面側は seq を見て、まだ再生していないものだけを
+        再生する（同じ盤面を描き直すたびに何度も揺れてしまうのを防ぐため）。
+        """
+        self.fx_seq += 1
+        self.fx = {
+            "seq": self.fx_seq,
+            "kind": kind,
+            "attacker": attacker.uid if attacker else None,
+            "target": target.uid if target else None,
+            # 画面中央に出す口上。title が名前、cry が叫び。
+            # tone は光らせる色（attack=赤 / heal=緑 / buff=青）。
+            "title": title,
+            "cry": cry,
+            "tone": tone,
+        }
+
+    def _say_hidden(self, owner: Player, mine: str, theirs: str):
+        """伏せてある場所（ベンチ・モンスター手札）の出来事を、見せ方を変えて両者に伝える。
+
+        owner には具体的なカード名入りの `mine` を、相手には
+        カード名を伏せた `theirs` を出す。「何かが起きた」ことは伝わるが
+        「何のカードか」は漏れない。
+        """
+        self._say(mine, private_to=owner.idx)
+        self._say(theirs, private_to=1 - owner.idx)
 
     # ------------------------------------------------------------ 山札操作
     def _draw_monster(self, p: Player) -> Optional[Card]:
@@ -215,39 +313,68 @@ class Game:
         p.hand.append(c)
         return c
 
+    def _pop_item(self) -> Optional[Card]:
+        """アイテム山札から1枚取り出す（手札には入れない）。めくって選ばせる用。"""
+        if not self.item_deck:
+            if not self.item_discard:
+                return None
+            self.item_deck = self.item_discard
+            self.item_discard = []
+            self.rng.shuffle(self.item_deck)
+        return self.item_deck.pop() if self.item_deck else None
+
     def _spawn(self, p: Player, card: Card) -> Monster:
         m = Monster(card=card, uid=self._next_uid(),
                     hp=B["monster_hp"], hp_max=B["monster_hp"],
                     base_atk=card.atk, base_def=card.dfn,
                     ability_enabled=self.options["monster_abilities"])
+        if m.ability_id in BENCH_LIMITED_ABILITIES:
+            m.bench_turns_left = B["bench_ability_turns"]
+        return m
+
+    def _spawn_god(self, p: Player, key: str) -> Monster:
+        """神軍降臨で、J/Q/Kの上位互換モンスターを1体作る。
+        技は元のカードと共通（既存ロジックがそのまま効く）。HPだけ通常と異なる。"""
+        m = self._spawn(p, make_god_monster(key))
+        m.hp = m.hp_max = DIVINE["hp"]
         return m
 
     # --------------------------------------------------------------- 場補充
     def _refill_field(self, p: Player, silent: bool = False, instant: bool = False):
-        """バトル場の繰り上げと、モンスターの補充を行う。
+        """バトル場の繰り上げを行う（空きがあればベンチから自動で上がる）。
 
-        通常（instant=False）は、補充された分をモンスター手札に置くだけ。
-        実際にバトル場・ベンチへ置くのは、プレイヤー（またはCPU）の
-        「配置」操作（apply_action の type="place"）。
+        モンスター手札への補充はここではやらない。アイテム手札と同じく
+        `_draw_monster_to_hand` が自分のターン開始時に1枚だけ引く
+        （`_begin_turn` 参照）。実際にバトル場・ベンチへ置くのは、
+        プレイヤー（またはCPU）の「配置」操作（apply_action の type="place"）。
 
         instant=True は **ゲーム開始時専用**。手札を経由すると、先攻が
         「配置→攻撃」を済ませる間、後攻はまだ1度も配置できておらず
         バトル場が空のまま＝直接攻撃され放題、という不公平が起きる。
         それを避けるため、初期配置だけは両者同時に山札から直接場へ出す。
         """
-        # バトル場が空いていたら、ベンチから一番元気なものを繰り上げる（これは常に自動）
+        # バトル場が空いたときの繰り上げ。
+        # 誰を出すかは戦況を左右するので、人間には選んでもらう（pending_promote）。
+        # ゲーム開始時とCPUは、待たせても仕方がないので一番元気なものを自動で出す。
         if p.battle is None:
             candidates = [(i, m) for i, m in enumerate(p.bench) if m]
-            if candidates:
+            if candidates and (instant or p.is_cpu):
                 i, m = max(candidates, key=lambda t: (t[1].hp, t[1].base_atk))
                 p.bench[i] = None
-                p.battle = m
+                self._stand_battle(p, m)
                 if not silent:
                     self._say("🔀 {}：ベンチの {} がバトル場へ".format(p.name, self._nm(m)))
+            elif candidates and self.winner is None:
+                if p.idx not in self.pending_promote:
+                    self.pending_promote.append(p.idx)
+                    # 進行が止まる理由が分からないと不安なので、両者に知らせる。
+                    # 何を選んでいるかは伏せたまま「選択中」だけを伝える。
+                    if not silent:
+                        self._say("🤔 {}：バトル場へ出すカードを選んでいます…".format(p.name))
             elif instant:
                 card = self._draw_monster(p)
                 if card:
-                    p.battle = self._spawn(p, card)
+                    self._stand_battle(p, self._spawn(p, card))
                     if not silent:
                         self._say("🆕 {}：バトル場に {} が登場".format(p.name, self._nm(p.battle)))
                     self._on_enter(p, p.battle, silent)
@@ -260,20 +387,61 @@ class Game:
                         break
                     p.bench[i] = self._spawn(p, card)
                     if not silent:
-                        self._say("🆕 {}：ベンチに {} が登場".format(p.name, self._nm(p.bench[i])))
+                        # ベンチの中身は相手に伏せる
+                        self._say_hidden(
+                            p,
+                            "🆕 {}：ベンチに {} が登場".format(p.name, self._nm(p.bench[i])),
+                            "🆕 {}：ベンチにモンスターが1体登場".format(p.name))
                     self._on_enter(p, p.bench[i], silent)
             return
 
-        # 空いている枠の数だけ、山札からモンスター手札に引く。置き場所はあとで選ぶ。
-        empty = (1 if p.battle is None else 0) + sum(1 for b in p.bench if b is None)
-        while len(p.monster_hand) < empty:
-            card = self._draw_monster(p)
-            if not card:
-                break
-            p.monster_hand.append(card)
-            if not silent:
-                self._say("🃏 {} が {} をモンスター手札に加えた".format(
-                    p.name, "{}{}".format(card.label, card.name)))
+        # 選ぶ余地が無くなったら待ちを解除する
+        # （誰かが出て埋まった／ベンチも全滅して選べるものが無い）
+        if p.idx in self.pending_promote and (p.battle is not None or not any(p.bench)):
+            self.pending_promote.remove(p.idx)
+
+    def _stand_battle(self, p: Player, m: Optional[Monster]):
+        """バトル場に立たせる。立った時点で相手に見られたことにする。"""
+        p.battle = m
+        if m:
+            m.revealed = True
+
+    def pending_seat(self) -> Optional[int]:
+        """いま「ベンチの誰を出すか」を選ぶ番の席。誰も待っていなければ None。"""
+        return self.pending_promote[0] if self.pending_promote else None
+
+    def waiting_for_human_choice(self) -> bool:
+        """人間の選択待ちで進行を止めるべきか（CPUを走らせる側が見る）。
+
+        繰り上げ（pending_promote）と、めくったカードの選択（pending_choice）の
+        どちらも対象。どちらか一方でも待っている間は、CPUを進めてはいけない。
+        """
+        for seat in (self.pending_seat(),
+                     self.pending_choice["seat"] if self.pending_choice else None):
+            if seat is not None and not self.players[seat].is_cpu:
+                return True
+        return False
+
+    def _draw_monster_to_hand(self, p: Player, silent: bool = False) -> Optional[Card]:
+        """モンスター手札にターン開始時1枚だけ引く（アイテム手札と同じ方式）。
+
+        上限はアイテム手札とは別枠（monster_hand_size_max）。
+        場は4枠しかないので、配置しきれない分を抱えられるよう多めにしてある。
+        """
+        if len(p.monster_hand) >= B["monster_hand_size_max"]:
+            return None
+        card = self._draw_monster(p)
+        if not card:
+            return None
+        p.monster_hand.append(card)
+        if not silent:
+            # 手札の中身は相手に伏せる（引いた事実だけ伝える）
+            self._say_hidden(
+                p,
+                "🃏 {} が {} をモンスター手札に加えた".format(
+                    p.name, "{}{}".format(card.label, card.name)),
+                "🃏 {} がモンスターを1枚引いた".format(p.name))
+        return card
 
     def _nm(self, m: Monster) -> str:
         return "魔王" if m.is_demon else "{} {}".format(m.card.label, m.card.name)
@@ -321,10 +489,13 @@ class Game:
                 m.fatigue -= 1
 
         # 毒・呪いの継続ダメージ
+        # 毒＝相手が仕掛けてきたもの→倒れたら相手のせい（トレーナーダメージあり）
+        # 呪い＝自分の魔剣の自傷→倒れたら自分のせい（トレーナーダメージなし）
         for m in list(p.field_monsters()):
-            tick = m.poison + m.curse
-            if tick > 0:
-                self._damage_monster(p, m, tick, source="継続ダメージ", by_opponent=False)
+            if m.poison > 0:
+                self._damage_monster(p, m, m.poison, source="毒", by_opponent=True)
+            if m.hp > 0 and m.curse > 0:
+                self._damage_monster(p, m, m.curse, source="呪い", by_opponent=False)
 
         # ターン開始時の技
         for m in p.field_monsters():
@@ -342,14 +513,30 @@ class Game:
                 self._say("👹 {} の魔王が消滅した".format(p.name))
                 self._remove(p, p.battle, to_discard=True)
 
+        # 聖女クイーン・指揮官キングのベンチ滞在カウントダウン：
+        # ベンチに置いておくだけの恒久バフにならないよう、上限ターンで強制退場させる。
+        # バトル場にいる間はカウントしない（魔王とは逆の向き）。
+        for m in list(p.bench):
+            if m and m.bench_turns_left is not None:
+                m.bench_turns_left -= 1
+                if m.bench_turns_left <= 0:
+                    self._say_hidden(
+                        p,
+                        "⌛ {} はベンチにいられる期限が切れて退場".format(self._nm(m)),
+                        "⌛ {} のベンチのモンスターが1体、期限切れで退場".format(p.name))
+                    self._remove(p, m, to_discard=True)
+
         if self.winner is None:
             self._refill_field(p)
+            self._draw_monster_to_hand(p)
             self._draw_item(p)
         self._check_end()
 
     def end_turn(self):
         if self.winner is not None:
             return
+        # 呪縛は「次の1ターン」だけ。縛られた本人のターンが終わったら解ける。
+        self.players[self.current].stunned = False
         self.turn += 1
         self.current = 1 - self.current
         if self.turn > self.MAX_TURNS:
@@ -362,14 +549,35 @@ class Game:
         if self.winner is not None:
             return []
         idx = self.current if idx is None else idx
+
+        # めくったカードの選択待ち。自分のターン中にしか起きない。
+        ch = self.pending_choice
+        if ch:
+            if idx != ch["seat"]:
+                return []
+            return [{"type": "pick", "index": i,
+                     "label": "🎴 {}{} を選ぶ".format(c.label, c.name)}
+                    for i, c in enumerate(ch["cards"])]
+
+        # バトル場の繰り上げ待ちが最優先。選び終わるまで他の操作はできない。
+        # 相手のターン中に倒された場合もここに入るので、手番は見ない。
+        pend = self.pending_seat()
+        if pend is not None:
+            if idx != pend:
+                return []
+            p = self.players[idx]
+            return [{"type": "promote", "bench": i,
+                     "label": "🔀 {} をバトル場へ".format(self._nm(m))}
+                    for i, m in enumerate(p.bench) if m]
+
         if idx != self.current:
             return []
         p = self.players[idx]
         o = self.players[1 - idx]
         acts: List[dict] = []
 
-        # 攻撃
-        if p.battle and not p.attacked and p.battle.can_attack:
+        # 攻撃（呪縛されていると出せない）
+        if p.battle and not p.attacked and p.battle.can_attack and not p.stunned:
             if not (p.battle.is_demon and o.battle and o.battle.is_demon):
                 target = "相手トレーナー（直接攻撃）" if o.battle is None else self._nm(o.battle)
                 acts.append({"type": "attack", "label": "⚔️ 攻撃 → {}".format(target)})
@@ -384,8 +592,8 @@ class Game:
                     acts.append({"type": "place", "hand": i, "slot": j,
                                  "label": "🃏 {}{} をベンチに配置".format(c.label, c.name)})
 
-        # 交代
-        if p.swaps_left > 0:
+        # 交代（呪縛されていると動けない）
+        if p.swaps_left > 0 and not p.stunned:
             for i, m in enumerate(p.bench):
                 if m:
                     acts.append({"type": "swap", "bench": i,
@@ -401,6 +609,41 @@ class Game:
         acts.append({"type": "end_turn", "label": "⏭️ ターン終了"})
         return acts
 
+    def _can_attack_with(self, m: Optional[Monster], o: Player) -> bool:
+        """そのモンスターがバトル場にいたとして、いま攻撃できるか。"""
+        if m is None or not m.can_attack:      # 疲労中は撃てない
+            return False
+        if m.is_demon and o.battle and o.battle.is_demon:   # 魔王同士は不可
+            return False
+        return True
+
+    def attack_chance(self, idx: int) -> Optional[str]:
+        """このターン、まだ攻撃を出せる余地があるかを返す。
+
+        ターン終了の押し忘れ警告に使う。1ターンに1回しかない攻撃を
+        使わずに終わるのはもったいないので、画面側が引き止められるようにする。
+
+          "now"        … いますぐ攻撃できる
+          "after_swap" … バトル場は疲労中などで撃てないが、
+                         ベンチと交代すれば撃てる（交代しても攻撃権は残る）
+          None         … どう頑張ってもこのターンは攻撃できない
+
+        ※ 気付け薬で疲労を治す道もあるが、そこまで数えると
+          「アイテムを持っているだけで毎回警告が出る」ので含めない。
+        """
+        if idx != self.current:
+            return None
+        p, o = self.players[idx], self.players[1 - idx]
+        if p.attacked or p.stunned:
+            return None
+        if p.battle and self._can_attack_with(p.battle, o):
+            return "now"
+        if p.swaps_left > 0:
+            for m in p.bench:
+                if self._can_attack_with(m, o):
+                    return "after_swap"
+        return None
+
     def _item_usable(self, p: Player, o: Player, c: Card) -> bool:
         t = c.effect.type
         if t in ("heal", "full_heal", "weapon", "armor", "weapon_cursed",
@@ -412,7 +655,11 @@ class Game:
             if t in ("heal", "full_heal"):
                 return p.battle.hp < p.battle.hp_max
             return True
-        if t in ("burn", "poison", "stun", "forbidden"):
+        if t == "stun":
+            return not o.stunned          # 二重掛けは無意味
+        if t == "divine_army":
+            return o.trainer_hp <= DIVINE["trigger_hp"]
+        if t in ("burn", "poison", "forbidden"):
             return o.battle is not None
         if t == "trainer_heal":
             return p.trainer_hp < p.trainer_hp_max
@@ -423,18 +670,132 @@ class Game:
         if t == "draw_items":
             return len(p.hand) < B["hand_size_max"]
         if t == "revive":
-            return any(x.kind == "monster" for x in p.discard) and any(m is None for m in p.bench)
+            # 戻す先はモンスター手札なので、ベンチの空きではなく手札の空きを見る
+            return (any(x.kind == "monster" for x in p.discard)
+                    and len(p.monster_hand) < B["monster_hand_size_max"])
+        return True
+
+    # -------------------------------------------------- めくって選ぶ（アイテム）
+    def _begin_choice(self, p: Player, kind: str, title: str,
+                      cards: List[Card], picks: int, to: str):
+        """候補カードを見せて、その中から選んでもらう状態に入る。
+
+        cards はすでに山札／捨て札から取り出してある前提。
+        選ばれなかったぶんは `_finish_choice` が元へ戻す。
+        CPU は待たせても仕方がないので、その場で自動的に選ぶ。
+        """
+        if not cards:
+            return
+        picks = min(picks, len(cards))
+        self.pending_choice = {"seat": p.idx, "kind": kind, "title": title,
+                               "cards": list(cards), "picks": picks, "to": to}
+        if p.is_cpu:
+            while self.pending_choice:
+                self._do_pick({"index": self._cpu_best_pick()})
+            return
+        self._say("🤔 {}：{}".format(p.name, title))
+
+    def _cpu_best_pick(self) -> int:
+        """CPU の選び方。モンスターは強いもの、アイテムは適当に先頭。"""
+        cards = self.pending_choice["cards"]
+        best, bi = None, 0
+        for i, c in enumerate(cards):
+            score = c.atk + c.dfn if c.kind == "monster" else 0
+            if best is None or score > best:
+                best, bi = score, i
+        return bi
+
+    def _do_pick(self, action: dict) -> bool:
+        """めくった候補から1枚選ぶ。"""
+        ch = self.pending_choice
+        if not ch:
+            return False
+        i = action.get("index", -1)
+        if not (0 <= i < len(ch["cards"])):
+            return False
+        p = self.players[ch["seat"]]
+        card = ch["cards"].pop(i)
+
+        if ch["to"] == "monster_hand":
+            p.monster_hand.append(card)
+            self._say_hidden(
+                p,
+                "🃏 {} が {}{} を選んだ".format(p.name, card.label, card.name),
+                "🃏 {} がモンスターを1枚選んだ".format(p.name))
+        else:                                   # アイテム手札
+            p.hand.append(card)
+            self._say_hidden(
+                p,
+                "🎒 {} が {}{} を選んだ".format(p.name, card.label, card.name),
+                "🎒 {} がアイテムを1枚選んだ".format(p.name))
+
+        ch["picks"] -= 1
+        if ch["picks"] <= 0 or not ch["cards"]:
+            self._finish_choice()
+        return True
+
+    def _finish_choice(self):
+        """選ばれなかったカードを元へ戻して、選択待ちを終える。"""
+        ch = self.pending_choice
+        self.pending_choice = None
+        if not ch:
+            return
+        rest = ch["cards"]
+        if not rest:
+            return
+        p = self.players[ch["seat"]]
+        if ch["kind"] == "revive":
+            p.discard.extend(rest)              # 捨て札はそのまま戻す
+        elif ch["to"] == "monster_hand":
+            p.deck.extend(rest)                 # 山札へ戻して混ぜる
+            self.rng.shuffle(p.deck)
+        else:
+            self.item_deck.extend(rest)
+            self.rng.shuffle(self.item_deck)
+
+    def _do_promote(self, action: dict) -> bool:
+        """空いたバトル場に、選ばれたベンチのモンスターを繰り上げる。"""
+        seat = self.pending_seat()
+        if seat is None:
+            return False
+        p = self.players[seat]
+        i = action.get("bench", -1)
+        if p.battle is not None or not (0 <= i < len(p.bench)) or p.bench[i] is None:
+            return False
+        m = p.bench[i]
+        p.bench[i] = None
+        self._stand_battle(p, m)
+        self.pending_promote.remove(seat)
+        # バトル場は公開領域なので、カード名を出してよい
+        self._say("🔀 {}：ベンチの {} をバトル場へ出した".format(p.name, self._nm(m)))
+        self._check_end()
         return True
 
     # ============================================================== 行動実行
     def apply_action(self, action: dict) -> bool:
         if self.winner is not None:
             return False
+
+        # めくったカードの選択が最優先
+        if action.get("type") == "pick":
+            return self._do_pick(action)
+        if self.pending_choice:
+            return False      # 選び終わるまで他の操作は止める
+
+        # バトル場の繰り上げ選択。相手のターン中にも起こるので、
+        # 手番を見ずに、選ぶ権利のある人の操作として先に処理する。
+        if action.get("type") == "promote":
+            return self._do_promote(action)
+        if self.pending_promote:
+            return False      # 誰かが選び終わるまで、他の操作は止める
+
         p = self.players[self.current]
         o = self.players[1 - self.current]
         t = action.get("type")
 
         if t == "attack":
+            if p.stunned:
+                return False
             if not (p.battle and not p.attacked and p.battle.can_attack):
                 return False
             if p.battle.is_demon and o.battle and o.battle.is_demon:
@@ -442,10 +803,14 @@ class Game:
             self._do_attack(p, o)
         elif t == "swap":
             i = action.get("bench", -1)
+            if p.stunned:
+                return False
             if p.swaps_left <= 0 or not (0 <= i < len(p.bench)) or p.bench[i] is None:
                 return False
             p.swaps_left -= 1
-            p.battle, p.bench[i] = p.bench[i], p.battle
+            coming = p.bench[i]
+            p.bench[i] = p.battle
+            self._stand_battle(p, coming)
             self._say("🔄 {}：{} と交代".format(p.name, self._nm(p.battle)))
         elif t == "place":
             i = action.get("hand", -1)
@@ -456,13 +821,17 @@ class Game:
                 if p.battle is not None:
                     return False
                 card = p.monster_hand.pop(i)
-                p.battle = self._spawn(p, card)
+                self._stand_battle(p, self._spawn(p, card))
                 self._say("🆕 {}：バトル場に {} が登場".format(p.name, self._nm(p.battle)))
                 self._on_enter(p, p.battle)
             elif isinstance(slot, int) and 0 <= slot < len(p.bench) and p.bench[slot] is None:
                 card = p.monster_hand.pop(i)
                 p.bench[slot] = self._spawn(p, card)
-                self._say("🆕 {}：ベンチに {} が登場".format(p.name, self._nm(p.bench[slot])))
+                # ベンチは伏せ札なので、相手にはカード名を出さない
+                self._say_hidden(
+                    p,
+                    "🆕 {}：ベンチに {} が登場".format(p.name, self._nm(p.bench[slot])),
+                    "🆕 {}：ベンチにモンスターを1体配置".format(p.name))
                 self._on_enter(p, p.bench[slot])
             else:
                 return False
@@ -504,6 +873,12 @@ class Game:
         p.attacked = True
         atk = self._effective_atk(p, a)
         aid = a.ability_id
+        # 攻撃した側は身構えて揺れ、殴られた側には爪痕が走る
+        cry = "いけっ、{}！".format(a.card.name if not a.is_demon else "魔王")
+        self._fx("attack", attacker=a, target=o.battle,
+                 title="⚔️ {} の こうげき".format(self._nm(a)), cry=cry, tone="attack")
+        # 誰が仕掛けたのかが一目で分かるよう、名乗りを上げてから斬りかかる
+        self._say("🗣️ {}「{}」".format(p.name, cry))
 
         # 直接攻撃（相手の場が空）
         if o.battle is None:
@@ -553,6 +928,16 @@ class Game:
         if p.battle is not a:  # 反動で自滅した
             return
 
+        # 魔王は攻撃してもカウントが進む。
+        # 「攻撃 → ベンチへ退避」を繰り返すとターン開始時のカウントを踏まず、
+        # 実質いつまでも居座れてしまう抜け穴があったため。
+        if a.is_demon and a.demon_turns > 0:
+            a.demon_turns -= 1
+            if a.demon_turns <= 0:
+                self._say("👹 {} の魔王が力を使い果たして消滅した".format(p.name))
+                self._remove(p, a, to_discard=True)
+                return
+
         # 伝説の剣は1回で壊れる
         if a.fragile_atk:
             a.atk_bonus -= a.fragile_atk
@@ -583,10 +968,26 @@ class Game:
         if dmg <= 0 or m.hp <= 0:
             return
         m.hp -= dmg
-        if source == "継続ダメージ":
-            self._say("🩸 {} の {} が{}で{}ダメージ".format(owner.name, self._nm(m), source, dmg))
+        if source in ("毒", "呪い"):
+            self._say_visible(
+                owner, m,
+                "🩸 {} の {} が{}の継続ダメージで{}ダメージ".format(
+                    owner.name, self._nm(m), source, dmg),
+                "🩸 {} のベンチのモンスターが{}の継続ダメージで{}ダメージ".format(
+                    owner.name, source, dmg))
         if m.hp <= 0:
             self._defeat(owner, m, by_opponent)
+
+    def _say_visible(self, owner: Player, m: Monster, mine: str, theirs: str):
+        """モンスターの居場所に応じてログの見せ方を切り替える。
+
+        バトル場は公開情報なのでそのまま全員に出す。
+        ベンチは伏せ札なので、相手にはカード名を伏せた `theirs` を出す。
+        """
+        if owner.battle is m:
+            self._say(mine)
+        else:
+            self._say_hidden(owner, mine, theirs)
 
     def _defeat(self, owner: Player, m: Monster, by_opponent: bool):
         # 不死鳥：1度だけ全快で復活
@@ -594,14 +995,22 @@ class Game:
             m.revived = True
             m.hp = m.hp_max
             m.poison = 0
-            self._say("🔥 不死鳥が蘇った！{} はHP全快で復活".format(self._nm(m)))
+            self._say_visible(
+                owner, m,
+                "🔥 不死鳥が蘇った！{} はHP全快で復活".format(self._nm(m)),
+                "🔥 {} のベンチで不死鳥が蘇った".format(owner.name))
             return
-        self._say("☠️ {} の {} が倒れた".format(owner.name, self._nm(m)))
-        self._remove(owner, m, to_discard=True)
+        self._say_visible(
+            owner, m,
+            "☠️ {} の {} が倒れた".format(owner.name, self._nm(m)),
+            "☠️ {} のベンチのモンスターが1体倒れた".format(owner.name))
+        # 撃破ダメージは「倒れた」の直後に出す。
+        # 先に _remove すると、そこから出る繰り上げの案内が間に割り込んでしまう。
         if by_opponent:
             v = B["kill_trainer_damage"]
             owner.trainer_hp -= v
             self._say("💢 {} のトレーナーに{}ダメージ".format(owner.name, v))
+        self._remove(owner, m, to_discard=True)
 
     def _remove(self, owner: Player, m: Monster, to_discard: bool = True):
         if owner.battle is m:
@@ -618,6 +1027,11 @@ class Game:
         e = c.effect
         t, v = e.type, e.value
         self._say("🎒 {} が「{}」を使用".format(p.name, c.name))
+        if e.cry:
+            self._say("🗣️ {}「{}」".format(p.name, e.cry))
+        # 画面中央に大きく出す。色は効果の性質で分ける（赤=攻め / 緑=癒し / 青=強化）
+        self._fx("item", title="🎒 {}".format(c.name), cry=e.cry,
+                 tone=ITEM_TONE.get(t, "buff"))
 
         if t == "heal":
             p.battle.hp = min(p.battle.hp_max, p.battle.hp + v)
@@ -650,6 +1064,9 @@ class Game:
             self._say("⚔️ {} の攻撃+{}（1回攻撃で壊れる）".format(self._nm(p.battle), v))
         elif t == "burn":
             self._say("🔥 {} に{}ダメージ".format(self._nm(o.battle), v))
+            # 直前のアイテム演出に、被弾の相手を書き足す（別の演出にはしない）
+            if self.fx:
+                self.fx["target"] = o.battle.uid
             self._damage_monster(o, o.battle, v, source="呪符", by_opponent=True)
             if e.extra and p.battle:
                 self._say("🩸 反動で自分の {} に{}ダメージ".format(self._nm(p.battle), e.extra))
@@ -658,8 +1075,9 @@ class Game:
             o.battle.poison = max(o.battle.poison, v)
             self._say("☠️ {} が毒状態に（毎ターン{}）".format(self._nm(o.battle), v))
         elif t == "stun":
-            o.battle.fatigue = max(o.battle.fatigue, B["fatigue_turns"])
-            self._say("🌀 {} は次のターン攻撃できない".format(self._nm(o.battle)))
+            # モンスターではなくプレイヤーを縛る。交代で逃げられないように。
+            o.stunned = True
+            self._say("🌀 {} は次のターン、攻撃も交代もできない".format(o.name))
         elif t == "cure_fatigue":
             p.battle.fatigue = 0
             self._say("⚡ {} の疲労が回復".format(self._nm(p.battle)))
@@ -667,24 +1085,71 @@ class Game:
             p.swaps_left += 1
             self._say("🔄 交代権を1回追加")
         elif t == "deploy":
-            card = self._draw_monster(p)
-            if card:
-                p.monster_hand.append(card)
-                self._say("🃏 号令：{}{} をモンスター手札に追加".format(card.label, card.name))
+            # 山札の上から数枚めくって、その中から選ぶ。
+            # 山札全部から選べると欲しいカードが必ず来てしまうので、候補を絞る。
+            if len(p.monster_hand) >= B["monster_hand_size_max"]:
+                self._say("🚫 号令：モンスター手札が上限で追加できなかった")
+            else:
+                look = [c for c in (self._draw_monster(p)
+                                    for _ in range(B["look_at_cards"])) if c]
+                self._begin_choice(p, "deploy",
+                                   "号令：めくった{}枚から1枚選ぶ".format(len(look)),
+                                   look, 1, "monster_hand")
+        elif t == "divine_army":
+            # 代償：自分のトレーナーHPを削る（自滅しても構わない禁忌の力という位置づけ）
+            cost = DIVINE["cost_hp"]
+            p.trainer_hp -= cost
+            self._say("🩸 代償：{} のトレーナーHP-{}（残り{}）".format(p.name, cost, p.trainer_hp))
+
+            # ベンチのモンスターは失われない。モンスター手札に戻して温存する
+            # （収まりきらない分だけ、やむを得ず捨て札へ）
+            returned = []
+            for i, m in enumerate(p.bench):
+                if m:
+                    p.bench[i] = None
+                    returned.append(m.card)
+            room = max(0, B["monster_hand_size_max"] - len(p.monster_hand))
+            p.monster_hand.extend(returned[:room])
+            overflow = returned[room:]
+            if overflow:
+                p.discard.extend(overflow)
+            if returned:
+                self._say_hidden(
+                    p,
+                    "🌀 ベンチのモンスターが手札に戻った（{}）".format(
+                        "・".join(c.label + c.name for c in returned)),
+                    "🌀 {} のベンチのモンスターが手札に戻った".format(p.name))
+
+            # 神々を3体、ランダムにベンチへ直接召喚する
+            picks = self.rng.sample(GOD_ARMY_KEYS, min(3, len(GOD_ARMY_KEYS), len(p.bench)))
+            for i, key in enumerate(picks):
+                god = self._spawn_god(p, key)
+                p.bench[i] = god
+                self._say_hidden(
+                    p,
+                    "✨ {} が降臨した！".format(self._nm(god)),
+                    "✨ {} のベンチに何かが降臨した…！".format(p.name))
+                self._on_enter(p, god)
         elif t == "draw_items":
-            n = 0
-            for _ in range(v):
-                if self._draw_item(p) is None:
+            look = []
+            for _ in range(B["look_at_cards"] + v):
+                c2 = self._pop_item()
+                if c2 is None:
                     break
-                n += 1
-            self._say("📜 アイテムを{}枚引いた".format(n))
+                look.append(c2)
+            self._begin_choice(p, "draw_items",
+                               "賢者の杖：めくった{}枚から{}枚選ぶ".format(len(look), v),
+                               look, v, "hand")
         elif t == "revive":
-            monsters = [x for x in p.discard if x.kind == "monster"]
-            if monsters:
-                best = max(monsters, key=lambda x: x.atk + x.dfn)
-                p.discard.remove(best)
-                p.monster_hand.append(best)
-                self._say("🕊️ 蘇生：{}{} をモンスター手札に戻した".format(best.label, best.name))
+            # 捨て札は中身が分かっているので、こちらは全部から自由に選べる
+            if len(p.monster_hand) >= B["monster_hand_size_max"]:
+                self._say("🚫 蘇生：モンスター手札が上限で戻せなかった")
+            else:
+                monsters = [x for x in p.discard if x.kind == "monster"]
+                for x in monsters:
+                    p.discard.remove(x)
+                self._begin_choice(p, "revive", "蘇生：捨て札から1枚選ぶ",
+                                   monsters, 1, "monster_hand")
         elif t == "sacrifice":
             target = p.battle
             self._say("🩸 生贄の儀式：{} を捧げた".format(self._nm(target)))
@@ -696,8 +1161,10 @@ class Game:
             self._say("🕯️ 禁断の契約：自分のトレーナーHP-{}".format(v))
             target = o.battle
             if target:
-                self._say("🌑 {} を強制退場させた".format(self._nm(target)))
-                self._remove(o, target, to_discard=True)
+                # 相手のモンスターを葬った扱い。倒したのはこちらなので
+                # 相手トレーナーにも撃破ダメージが入る（_remove では入らない）
+                self._say("🌑 {} を葬り去った".format(self._nm(target)))
+                self._defeat(o, target, by_opponent=True)
 
     # ================================================================== 終了
     def _check_end(self):
@@ -726,18 +1193,38 @@ class Game:
 
     # ============================================================ 盤面の公開
     def view(self, viewer: int) -> dict:
-        """viewer から見た盤面。相手の手札・山札の中身は含めない。"""
+        """viewer から見た盤面。相手の手札・山札の中身・ベンチの中身は含めない。
+
+        バトル場は攻撃対象になるので常に公開。ベンチは伏せ札扱いで、
+        相手には「何体いるか」だけが伝わり、中身（名前・技・HPなど）は隠す。
+        """
         me = self.players[viewer]
         op = self.players[1 - viewer]
 
         def side(p: Player, hide_hand: bool) -> dict:
+            # ベンチは伏せ札。ただし一度バトル場に出たカードは既に見られているので、
+            # ベンチへ下がってもそのまま見せる（隠しても意味がないため）。
+            if hide_hand:
+                bench_view = [(m.to_dict() if (m and m.revealed)
+                               else ({"hidden": True} if m else None))
+                              for m in p.bench]
+            else:
+                bench_view = [m.to_dict() if m else None for m in p.bench]
+            # ベンチの支援カード（指揮官キング・聖女クイーン）による一時バフ。
+            # atk_now / def_now には含めず、増分を別に渡して画面で「30(+30)」と出す。
+            battle_view = p.battle.to_dict() if p.battle else None
+            if battle_view:
+                battle_view["atk_buff"] = (AV["C_K_command"]
+                                           if p.has_bench_ability("C_K_command") else 0)
+                battle_view["def_buff"] = (AV["H_Q_guard"]
+                                           if p.has_bench_ability("H_Q_guard") else 0)
             return {
                 "name": p.name,
                 "is_cpu": p.is_cpu,
                 "trainer_hp": p.trainer_hp,
                 "trainer_hp_max": p.trainer_hp_max,
-                "battle": p.battle.to_dict() if p.battle else None,
-                "bench": [m.to_dict() if m else None for m in p.bench],
+                "battle": battle_view,
+                "bench": bench_view,
                 "hand": ([] if hide_hand else [c.to_dict() for c in p.hand]),
                 "hand_count": len(p.hand),
                 "monster_hand": ([] if hide_hand else [c.to_dict() for c in p.monster_hand]),
@@ -762,5 +1249,23 @@ class Game:
             "actions": self.legal_actions(viewer),
             "winner": self.winner,
             "finish_reason": self.finish_reason,
-            "log": self.log[-60:],
+            # 自分に見せてよい行だけ残してから最後の60行を渡す。
+            # 相手のベンチ・モンスター手札に触れる行はここで落ちる。
+            "log": [e.text for e in self.log
+                    if e.private_to is None or e.private_to == viewer][-60:],
+            "fx": self.fx,
+            # まだ攻撃を出せる余地があるか（"now" / "after_swap" / None）。
+            # 画面がターン終了の押し忘れを引き止めるのに使う。
+            "attack_chance": self.attack_chance(viewer),
+            # バトル場の繰り上げを選ぶ番の席（誰も待っていなければ None）
+            "pending_promote": self.pending_seat(),
+            # めくったカードの選択待ち。候補は本人にしか見せない
+            # （相手に見せると山札の中身が漏れてしまう）
+            "pending_choice": (
+                {"title": self.pending_choice["title"],
+                 "picks": self.pending_choice["picks"],
+                 "cards": [c.to_dict() for c in self.pending_choice["cards"]]}
+                if self.pending_choice and self.pending_choice["seat"] == viewer
+                else None),
+            "choice_waiting": bool(self.pending_choice),
         }

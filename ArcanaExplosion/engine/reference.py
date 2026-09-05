@@ -145,7 +145,8 @@ def build_reference() -> dict:
             "numbers": group(monsters, NUMBER_RANKS),
             "demon": {
                 "hp": d["hp"], "atk": d["atk"], "def": d["def"], "turns": d["turns"],
-                "text": "♠A「魔王降臨」で登場。バトル場にいる間{}ターンで消滅（ベンチにいる間は数えない）、"
+                "text": "♠A「魔王降臨」で登場。バトル場にいる間{}ターンで消滅。"
+                        "攻撃してもカウントが1減るので、ベンチに逃がしても引き延ばせない。"
                         "魔王同士は攻撃できない".format(d["turns"]),
             },
         },

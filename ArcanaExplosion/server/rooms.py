@@ -21,7 +21,7 @@ import threading
 import time
 from typing import Dict, List, Optional
 
-from engine.ai import CPU_LEVEL_LABELS, CPU_LEVELS, DEFAULT_CPU_LEVEL, run_cpu_turn
+from engine.ai import CPU_LEVEL_LABELS, CPU_LEVELS, DEFAULT_CPU_LEVEL, choose_action
 from engine.game import DEFAULT_OPTIONS, Game
 
 # 紛らわしい文字（0/O、1/I/L）を除いた合言葉用の文字
@@ -79,16 +79,34 @@ class Room:
         self.game.start()
         self.finished_at = None
         self.rev += 1
-        if self.mode == "cpu":
-            self._advance_cpu()
+        # CPUの手は画面が1つずつ取りに来る（cpu_step）ので、ここでは進めない
 
-    def _advance_cpu(self):
-        guard = 0
-        while (self.game.winner is None
-               and self.game.players[self.game.current].is_cpu and guard < 50):
-            run_cpu_turn(self.game, level=self.cpu_level)
-            guard += 1
+    @property
+    def cpu_thinking(self) -> bool:
+        """CPUがまだ指すべき手を持っているか（画面が続きを取りに来る目印）。"""
+        if not self.game or self.game.winner is not None:
+            return False
+        if self.game.waiting_for_human_choice():
+            return False       # 人間が繰り上げを選ぶのが先
+        return self.game.players[self.game.current].is_cpu
+
+    def cpu_step(self) -> bool:
+        """CPUの手を **1つだけ** 進める。
+
+        まとめて1ターン分進めてしまうと、画面に届くのは全部終わった後の
+        盤面だけになり、攻撃モーションを出したくても
+        「攻撃したカードはもうベンチに下がっている」といったことが起きる。
+        1手ずつ返して、画面がそのつど演出を見せられるようにする。
+        """
+        if not self.cpu_thinking:
+            return False
+        act = choose_action(self.game, self.cpu_level)
+        if not self.game.apply_action(act):
+            self.game.apply_action({"type": "end_turn"})
         self.rev += 1
+        if self.game.winner is not None and self.finished_at is None:
+            self.finished_at = time.time()
+        return True
 
     @property
     def is_full(self) -> bool:
@@ -147,13 +165,23 @@ class Room:
     def apply(self, seat: int, action: dict) -> bool:
         if not self.game or self.game.winner is not None:
             return False
-        if self.game.current != seat:
+
+        # 画面がCPUの続きを1手ぶん取りに来た合図。
+        # 指すのはCPUなので、席の一致は見ない。
+        if action.get("type") == "cpu_step":
+            return self.cpu_step()
+
+        # バトル場の繰り上げ選択だけは、相手の番の最中でも自分に権利がある
+        pend = self.game.pending_seat()
+        if pend is not None:
+            if seat != pend:
+                return False
+        elif self.game.current != seat:
             return False           # 自分の番でなければ何もしない
         ok = self.game.apply_action(action)
         if ok:
             self.rev += 1
-            if self.mode == "cpu":
-                self._advance_cpu()
+            # CPUの続きはここで一気に進めない。画面が cpu_step で1手ずつ取りに来る。
         if self.game.winner is not None and self.finished_at is None:
             self.finished_at = time.time()
         return ok
@@ -171,6 +199,8 @@ class Room:
                 "cpu_level": self.cpu_level if self.mode == "cpu" else None,
                 "cpu_level_label": (CPU_LEVEL_LABELS.get(self.cpu_level)
                                      if self.mode == "cpu" else None),
+                # CPUの手がまだ残っている＝画面は演出を見せ終えたら続きを取りに来る
+                "cpu_thinking": self.cpu_thinking,
             },
             "rev": self.rev,
         }

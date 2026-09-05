@@ -7,7 +7,7 @@
   "kill_trainer_damage": 30,
 
   "bench_size": 3,
-  "hand_size_max": 5,
+  "hand_size_max": 7,
   "monster_hand_size_max": 7,
   "item_draw_per_turn": 1,
   "initial_hand_size": 3,

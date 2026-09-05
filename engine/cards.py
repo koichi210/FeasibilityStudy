@@ -209,9 +209,56 @@ def build_monster_deck() -> List[Card]:
 
 
 # --------------------------------------------------------------------------
+# 神軍降臨：♠♥♦のJ/Q/K（クラブは対象外）の上位互換モンスター。
+# 通常の52枚デッキには入っておらず、アイテム「神軍降臨」でのみ場に呼ばれる特別枠。
+#
+# 技（ability）は元のJ/Q/Kと完全に同じ id・数値を使い回す。
+# 上位互換なのは HP・攻撃・防御だけ（balance.json の divine_army）。
+# こうしておくと、疲労・ベンチ滞在ターン制限・攻撃時の追加効果など
+# game.py 側の既存ロジックがそのまま正しく効く（技ごとに特別扱いを増やさずに済む）。
+# --------------------------------------------------------------------------
+GOD_ARMY_KEYS = ["SJ", "SQ", "SK", "HJ", "HQ", "HK", "DJ", "DQ", "DK"]
+
+GOD_ARMY_NAMES: Dict[str, str] = {
+    "SJ": "阿修羅神ラグナ",
+    "SQ": "冥毒女神ヘカテー",
+    "SK": "暴虐神帝ダミアン",
+    "HJ": "聖癒天使セラフィナ",
+    "HQ": "守護聖女ミネルヴァ",
+    "HK": "聖光帝アルテリウス",
+    "DJ": "双撃神ゲイボルグ",
+    "DQ": "貫槍神姫アテナ",
+    "DK": "破壊神帝タイタン",
+}
+
+
+def make_god_monster(key: str) -> Card:
+    """神軍降臨で召喚される、J/Q/Kの上位互換モンスターを1体作る。
+
+    key は "SJ"/"SQ"/"SK"/"HJ"/"HQ"/"HK"/"DJ"/"DQ"/"DK" のいずれか。
+    """
+    suit, rank = key[0], {"J": 11, "Q": 12, "K": 13}[key[1]]
+    atk, dfn = monster_stats(suit, rank)
+    dv = BALANCE["divine_army"]
+    atk += dv["atk_bonus"]
+    dfn += dv["def_bonus"]
+    base = FACE_ABILITIES[key]
+    ability = Ability(base["id"], base["name"], base["text"])
+    return Card(suit=suit, rank=rank, kind="monster", name=GOD_ARMY_NAMES[key],
+                atk=atk, dfn=dfn, ability=ability)
+
+
+# --------------------------------------------------------------------------
 # アイテムカード
 # --------------------------------------------------------------------------
 IV = BALANCE["item_values"]
+
+# ♣K「号令」・♠A「禁断の契約」は同じ「神軍降臨」効果に差し替えてある（出現率を上げるため）。
+_DIVINE_ARMY_TEXT = (
+    "神軍降臨：相手トレーナーHPが{}以下のとき使用可。代償として自分のトレーナーHP-{}。"
+    "ベンチを一新し、J・Q・K の上位互換の神々を3体ランダム召喚する"
+    "（元のベンチのモンスターは失われず、モンスター手札に戻る）"
+).format(BALANCE["divine_army"]["trigger_hp"], BALANCE["divine_army"]["cost_hp"])
 
 ITEM_FACE: Dict[str, ItemEffect] = {
     # ♥ 回復
@@ -241,8 +288,8 @@ ITEM_FACE: Dict[str, ItemEffect] = {
                      cry="目を覚ませ、戦いはこれからだ！"),
     "CQ": ItemEffect("free_swap", 0, "入れ替え：交代権を消費せずに交代する",
                      cry="陣を組み替えよ、疾く走れ！"),
-    "CK": ItemEffect("deploy", 0, "号令：デッキからベンチにモンスターを1体追加展開",
-                     cry="集え、我が眷属たちよ！"),
+    "CK": ItemEffect("divine_army", 0, _DIVINE_ARMY_TEXT,
+                     cry="来たれ、終焉を告げる神々の軍勢よ！"),
     "CA": ItemEffect("draw_items", IV["C_A_draw"], "賢者の杖：アイテムを{}枚引く".format(IV["C_A_draw"]),
                      cry="叡智よ、我に至る道を示せ！"),
     # ♠ 禁断
@@ -255,10 +302,8 @@ ITEM_FACE: Dict[str, ItemEffect] = {
                      "生贄の儀式：自分のバトル場を退場させ、相手トレーナーに{}ダメージ".format(
                          IV["S_K_sacrifice"]),
                      cry="その命、我が勝利の糧となれ！"),
-    "SA": ItemEffect("forbidden", IV["S_A_self_damage"],
-                     "禁断の契約：自分のトレーナーHP-{} / 相手バトル場を即退場".format(
-                         IV["S_A_self_damage"]),
-                     cry="代償は我が魂、禁忌の扉よ開け！"),
+    "SA": ItemEffect("divine_army", 0, _DIVINE_ARMY_TEXT,
+                     cry="禁忌の扉を打ち破れ、神々の軍勢よ降臨せよ！"),
 }
 
 # 数字カード（2〜10）の名前。数字が上がるほど大仰になるように並べてある。

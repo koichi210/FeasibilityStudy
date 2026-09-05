@@ -16,11 +16,13 @@ import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from .cards import (BALANCE, Card, build_item_deck, build_monster_deck)
+from .cards import (BALANCE, Card, GOD_ARMY_KEYS, build_item_deck,
+                    build_monster_deck, make_god_monster)
 
 B = BALANCE
 AV = B["ability_values"]
 DEMON = B["demon_lord"]
+DIVINE = B["divine_army"]
 
 # 場に置いておくだけで味方全体を支え続けるカード。
 # 置きっぱなしで恒久的な効果になってしまうのを防ぐため、
@@ -328,6 +330,13 @@ class Game:
                     ability_enabled=self.options["monster_abilities"])
         if m.ability_id in BENCH_LIMITED_ABILITIES:
             m.bench_turns_left = B["bench_ability_turns"]
+        return m
+
+    def _spawn_god(self, p: Player, key: str) -> Monster:
+        """神軍降臨で、J/Q/Kの上位互換モンスターを1体作る。
+        技は元のカードと共通（既存ロジックがそのまま効く）。HPだけ通常と異なる。"""
+        m = self._spawn(p, make_god_monster(key))
+        m.hp = m.hp_max = DIVINE["hp"]
         return m
 
     # --------------------------------------------------------------- 場補充
@@ -648,6 +657,8 @@ class Game:
             return True
         if t == "stun":
             return not o.stunned          # 二重掛けは無意味
+        if t == "divine_army":
+            return o.trainer_hp <= DIVINE["trigger_hp"]
         if t in ("burn", "poison", "forbidden"):
             return o.battle is not None
         if t == "trainer_heal":
@@ -1084,6 +1095,41 @@ class Game:
                 self._begin_choice(p, "deploy",
                                    "号令：めくった{}枚から1枚選ぶ".format(len(look)),
                                    look, 1, "monster_hand")
+        elif t == "divine_army":
+            # 代償：自分のトレーナーHPを削る（自滅しても構わない禁忌の力という位置づけ）
+            cost = DIVINE["cost_hp"]
+            p.trainer_hp -= cost
+            self._say("🩸 代償：{} のトレーナーHP-{}（残り{}）".format(p.name, cost, p.trainer_hp))
+
+            # ベンチのモンスターは失われない。モンスター手札に戻して温存する
+            # （収まりきらない分だけ、やむを得ず捨て札へ）
+            returned = []
+            for i, m in enumerate(p.bench):
+                if m:
+                    p.bench[i] = None
+                    returned.append(m.card)
+            room = max(0, B["monster_hand_size_max"] - len(p.monster_hand))
+            p.monster_hand.extend(returned[:room])
+            overflow = returned[room:]
+            if overflow:
+                p.discard.extend(overflow)
+            if returned:
+                self._say_hidden(
+                    p,
+                    "🌀 ベンチのモンスターが手札に戻った（{}）".format(
+                        "・".join(c.label + c.name for c in returned)),
+                    "🌀 {} のベンチのモンスターが手札に戻った".format(p.name))
+
+            # 神々を3体、ランダムにベンチへ直接召喚する
+            picks = self.rng.sample(GOD_ARMY_KEYS, min(3, len(GOD_ARMY_KEYS), len(p.bench)))
+            for i, key in enumerate(picks):
+                god = self._spawn_god(p, key)
+                p.bench[i] = god
+                self._say_hidden(
+                    p,
+                    "✨ {} が降臨した！".format(self._nm(god)),
+                    "✨ {} のベンチに何かが降臨した…！".format(p.name))
+                self._on_enter(p, god)
         elif t == "draw_items":
             look = []
             for _ in range(B["look_at_cards"] + v):

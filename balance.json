@@ -33,6 +33,15 @@
     "turns": 3
   },
 
+  "divine_army": {
+    "_comment": "神軍降臨（アイテム）で召喚される、J/Q/Kの上位互換モンスター用の数値",
+    "trigger_hp": 40,
+    "cost_hp": 20,
+    "hp": 140,
+    "atk_bonus": 25,
+    "def_bonus": 15
+  },
+
   "ability_values": {
     "D_J_splash": 20,
     "H_J_regen": 20,

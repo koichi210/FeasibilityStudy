@@ -89,6 +89,11 @@ def _score_item(g: Game, p: Player, o: Player, card, conf: dict) -> float:
             return -1
         threat = om.base_atk + om.atk_bonus
         return threat - v
+    if t == "divine_army":
+        # 使える時点で相手は瀕死（_item_usable が保証済み）。畳みかける最優先の切り札。
+        # ただし代償で自滅してしまうなら使わない
+        cost = B["divine_army"]["cost_hp"]
+        return 200 if p.trainer_hp > cost else -1
     return 0
 
 

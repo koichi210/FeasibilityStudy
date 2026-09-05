@@ -8,6 +8,7 @@
 
   "bench_size": 3,
   "hand_size_max": 5,
+  "monster_hand_size_max": 7,
   "item_draw_per_turn": 1,
   "initial_hand_size": 3,
   "attacks_before_retire": 2,

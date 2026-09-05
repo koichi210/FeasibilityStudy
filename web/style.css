@@ -79,6 +79,12 @@ body {
 }
 
 .zone-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 700; }
+
+/* 自分のバトル場：カードのすぐ隣にターン終了ボタンを置く。
+   攻撃はこのカードをクリックするので、そこから手を動かさずに終了できる。
+   狭い画面では折り返して、ボタンが横幅いっぱいになる。 */
+.battle-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.battle-row .btn-end { white-space: nowrap; }
 .hint { font-weight: 400; opacity: .7; }
 .slots { display: flex; gap: 10px; flex-wrap: wrap; }
 
@@ -158,6 +164,34 @@ body {
   to   { opacity: 1; transform: none; }
 }
 .card-appear { animation: cardAppear .85s cubic-bezier(.2,.7,.3,1.15); }
+
+/* ------------------------------------ 画面上部の口上（アイテム名・攻撃）
+   ログは流れて見落とすので、使った瞬間だけ大きく主張させる。
+   操作の邪魔にならないよう、クリックは透過して1.6秒で消える。 */
+.callout {
+  position: fixed; top: 64px; left: 50%; transform: translate(-50%, -14px);
+  z-index: 55; pointer-events: none;
+  padding: 10px 26px; border-radius: 14px;
+  background: rgba(0,0,0,.72); border: 2px solid var(--gold);
+  text-align: center; opacity: 0;
+  transition: opacity .18s ease, transform .18s ease;
+  max-width: min(90vw, 520px);
+}
+.callout.show { opacity: 1; transform: translate(-50%, 0); }
+.callout-title { font-size: 19px; font-weight: 900; letter-spacing: 1px; }
+.callout-cry { font-size: 13px; margin-top: 3px; opacity: .95; }
+/* 効果の性質で色を変える。攻め＝赤 / 癒し＝緑 / 強化＝青 */
+.callout.attack { border-color: #ff7b6d; box-shadow: 0 0 22px rgba(255,90,80,.55); }
+.callout.attack .callout-title { color: #ffb3aa; }
+.callout.heal   { border-color: #5fe0a0; box-shadow: 0 0 22px rgba(79,208,138,.55); }
+.callout.heal   .callout-title { color: #a8f5cf; }
+.callout.buff   { border-color: #6fb8ff; box-shadow: 0 0 22px rgba(88,166,255,.55); }
+.callout.buff   .callout-title { color: #bcdcff; }
+@media (max-width: 820px) {
+  .callout { top: 56px; padding: 8px 16px; }
+  .callout-title { font-size: 16px; }
+  .callout-cry { font-size: 12px; }
+}
 
 /* ------------------------------------------- 攻撃モーションと被弾の爪痕 */
 /* 攻撃した側：小刻みに激しく震わせる。
@@ -270,6 +304,20 @@ body {
 .card.clickable:hover { transform: translateY(-4px); box-shadow: 0 10px 20px rgba(0,0,0,.5); }
 .card.fatigued { filter: saturate(.55) brightness(.9); }
 .card.done { opacity: .45; }
+
+/* バトル場が空いて「どれを出す？」と選んでもらっている最中のカード。
+   相手のターン中にも起きる割り込みなので、はっきり目立たせる。 */
+@keyframes pickPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(242,193,78,.85), 0 4px 10px rgba(0,0,0,.35); }
+  50%      { box-shadow: 0 0 0 8px rgba(242,193,78,0), 0 0 22px rgba(242,193,78,.9); }
+}
+.card.pick {
+  border-color: var(--gold);
+  animation: pickPulse 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .card.pick { animation: none; box-shadow: 0 0 0 3px rgba(242,193,78,.75); }
+}
 .card.hidden-card {
   background: repeating-linear-gradient(135deg, #2b2b3d, #2b2b3d 10px, #35354a 10px, #35354a 20px);
   color: #cfcfe0;
@@ -470,6 +518,11 @@ body {
 .loglist div { padding: 2px 4px; border-radius: 4px; }
 .loglist .turnline { background: rgba(255,255,255,.1); font-weight: 700; margin-top: 6px; }
 .loglist .newest { background: rgba(242,193,78,.18); }
+/* 「いま何を待っているか」の行。履歴ではないので、控えめに沈ませる */
+.loglist .logwait {
+  color: var(--muted); font-style: italic; opacity: .8;
+  border-top: 1px dashed var(--line); margin-top: 4px; padding-top: 5px;
+}
 
 /* ---------------------------------------------------------------- 決着表示 */
 .overlay {
@@ -732,8 +785,8 @@ body.in-lobby { overflow: hidden; }
   .side-me       { grid-area: me; }
   .hand-zone     { grid-area: hand; min-width: 0; }
   .monsterhand-zone { grid-area: mhand; min-width: 0; }
-  .actionbar     { grid-area: act; flex-direction: column; align-items: stretch; }
-  .actionbar .btn { width: 100%; }
+  /* ターン終了ボタンはバトル場の隣へ移したので、ここは状況表示だけ */
+  .actionbar     { grid-area: act; align-items: center; }
   .acthint { text-align: center; max-width: 210px; }
 
   /* 各プレイヤーの「トレーナー / バトル場 / ベンチ」を横一列に */
@@ -836,13 +889,17 @@ body.in-lobby { overflow: hidden; }
   .ability { display: none; }        /* 詳細はタップして見るので、ここは省く */
   .badges { font-size: 9.5px; }
 
-  /* 操作バーは画面下に貼りつけて、いつでも押せるようにする */
+  /* 状況表示は画面下に貼りつけて、常に見えるようにする */
   .actionbar {
     position: sticky; bottom: 0; z-index: 30;
     background: #123a2c; flex-wrap: wrap;
   }
-  .actionbar .btn { flex: 1 1 45%; padding: 14px 8px; font-size: 15px; }
   .acthint { flex: 1 1 100%; text-align: center; }
+
+  /* ターン終了はバトル場のカードの真下に、指で押しやすい大きさで置く */
+  .battle-row .btn-end {
+    flex: 1 1 100%; padding: 14px 8px; font-size: 15px;
+  }
 
   /* 右パネルは固定をやめて、下に流す */
   .sidepane { position: static; max-height: none; }

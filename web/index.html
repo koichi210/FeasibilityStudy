@@ -20,6 +20,9 @@
   <button id="leaveBtn" class="btn btn-ghost">🚪 モード選択へ</button>
 </header>
 
+<!-- アイテム名や攻撃の口上を、その瞬間だけ画面上部に大きく出す枠 -->
+<div class="callout" id="callout"></div>
+
 <main class="layout">
 
   <section class="board">
@@ -49,9 +52,14 @@
 
     <!-- ================= 自分 ================= -->
     <div class="side side-me">
+      <!-- ターン終了は、攻撃で押すバトル場のカードのすぐ隣に置く。
+           操作の起点から遠いと押し忘れるので、動線を短くしている。 -->
       <div class="zone zone-battle">
-        <div class="zone-label">🏟️ バトル場</div>
-        <div class="slots" id="myBattle"></div>
+        <div class="zone-label">🏟️ バトル場 <span class="hint">（クリックで攻撃）</span></div>
+        <div class="battle-row">
+          <div class="slots" id="myBattle"></div>
+          <button id="endTurnBtn" class="btn btn-end" disabled>⏭️ ターン終了</button>
+        </div>
       </div>
       <div class="zone zone-bench">
         <div class="zone-label">🛡️ ベンチ <span class="hint">（クリックで交代）</span></div>
@@ -71,7 +79,7 @@
     <!-- ================= モンスター手札（配置前） ================= -->
     <div class="hand-zone monsterhand-zone">
       <div class="zone-label">🃏 モンスター手札
-        <span class="hint">（クリックで選ぶ → 空いている枠をクリックで配置）</span>
+        <span class="hint">（クリックでそのまま場に出る）</span>
       </div>
       <div class="hand" id="myMonsterHand"></div>
     </div>
@@ -84,9 +92,9 @@
       <div class="hand" id="myHand"></div>
     </div>
 
+    <!-- 攻撃はバトル場のカードを直接クリック、ターン終了もその隣にある。
+         ここは状況を伝えるだけの行。 -->
     <div class="actionbar">
-      <button id="attackBtn" class="btn btn-attack" disabled>⚔️ 攻撃</button>
-      <button id="endTurnBtn" class="btn btn-end" disabled>⏭️ ターン終了</button>
       <span class="acthint" id="actHint"></span>
     </div>
 

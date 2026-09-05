@@ -127,7 +127,9 @@ FACE_ABILITIES: Dict[str, Dict[str, str]] = {
     "DJ": {"name": "デュアルブレイド", "id": "D_J_splash",
            "text": "攻撃時、相手のベンチ全体にも{}ダメージ".format(AV["D_J_splash"])},
     "HJ": {"name": "ヒーリングナイト", "id": "H_J_regen",
-           "text": "自分のターン開始時、自分の場の全モンスターのHPを{}回復".format(AV["H_J_regen"])},
+           "text": "自分のターン開始時、自分の場の全モンスターのHPを{}回復"
+                   "（ベンチにいられるのは{}ターンまで）".format(
+                       AV["H_J_regen"], BALANCE["bench_ability_turns"])},
     "CJ": {"name": "トリックスター", "id": "C_J_disturb",
            "text": "攻撃時、相手のバトル場を疲労させる"},
     "SJ": {"name": "バーサークソード", "id": "S_J_reckless",

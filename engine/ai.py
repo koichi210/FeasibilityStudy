@@ -75,11 +75,11 @@ def _score_item(g: Game, p: Player, o: Player, card, conf: dict) -> float:
     if t == "free_swap":
         return 5
     if t == "deploy":
-        return 15 if len(p.monster_hand) < B["hand_size_max"] else -1
+        return 15 if len(p.monster_hand) < B["monster_hand_size_max"] else -1
     if t == "draw_items":
         return 20
     if t == "revive":
-        return 25 if len(p.monster_hand) < B["hand_size_max"] else -1
+        return 25 if len(p.monster_hand) < B["monster_hand_size_max"] else -1
     if t == "sacrifice":
         # 瀕死のモンスターを捧げるのは有効
         return (v + 20) if bm and hp_rate < 0.3 else -1
@@ -189,7 +189,9 @@ def run_cpu_turn(g: Game, level: str = DEFAULT_CPU_LEVEL, max_steps: int = 12) -
     """CPU のターンを終わりまで進める。"""
     start = len(g.log)
     steps = 0
-    while g.winner is None and g.players[g.current].is_cpu and steps < max_steps:
+    # 人間がバトル場の繰り上げを選んでいる間は、CPUは何もせず待つ
+    while (g.winner is None and not g.waiting_for_human_choice()
+           and g.players[g.current].is_cpu and steps < max_steps):
         act = choose_action(g, level)
         if act["type"] == "end_turn":
             g.apply_action(act)
@@ -199,6 +201,9 @@ def run_cpu_turn(g: Game, level: str = DEFAULT_CPU_LEVEL, max_steps: int = 12) -
             break
         steps += 1
     else:
-        if g.winner is None and g.players[g.current].is_cpu:
+        # 人間の選択待ちで抜けた場合はターンを終わらせない。
+        # 選び終わったらここへ戻ってきて、CPUは続きを指す。
+        if (g.winner is None and not g.waiting_for_human_choice()
+                and g.players[g.current].is_cpu):
             g.apply_action({"type": "end_turn"})
     return g.log[start:]

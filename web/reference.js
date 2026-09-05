@@ -86,10 +86,9 @@
     h += '<div class="ref-lead">🎴 <b>覚えるのは、あとは絵札16枚だけ</b></div>';
     h += faceTable(d.faces, false);
 
-    if (full) {
-      h += '<div class="ref-lead">🔢 数字カードの一覧（規則どおりなので、確認用）</div>';
-      h += numberTable(d.numbers, false);
-    }
+    // 数字カードも名前で呼びたいので、パネルでも常に一覧を出す
+    h += '<div class="ref-lead">🔢 数字カードの一覧（2〜10）</div>';
+    h += numberTable(d.numbers, false);
     return h;
   }
 
@@ -128,10 +127,9 @@
            esc(d.demon.text) +
          "</div>";
 
-    if (full) {
-      h += '<div class="ref-lead">🔢 数字カードの一覧（計算どおりなので、確認用）</div>';
-      h += numberTable(d.numbers, true);
-    }
+    // 数字カードも名前で呼びたいので、パネルでも常に一覧を出す
+    h += '<div class="ref-lead">🔢 数字カードの一覧（2〜10）</div>';
+    h += numberTable(d.numbers, true);
     return h;
   }
 

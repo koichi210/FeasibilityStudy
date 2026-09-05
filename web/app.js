@@ -177,6 +177,7 @@ function enterGame(view) {
   lastRev = -1;
   render();
   if (SESSION && SESSION.mode === "lan") startPolling();
+  pumpCpu();   // CPUが先に動く場面なら、そのまま1手ずつ見せていく
 }
 
 function startPolling() {
@@ -236,6 +237,27 @@ async function send(action) {
   } finally {
     busy = false;
     document.body.style.cursor = "";
+  }
+  pumpCpu();
+}
+
+/* CPUの手を1つずつ取りに行く。
+   まとめて進めてもらうと、画面に届くのは全部終わった後の盤面だけになり、
+   攻撃モーションを出したい相手のカードが既にベンチへ下がっていて出せない。
+   1手ぶん進めては演出を見せ、終わったらまた次の1手…と繰り返す。 */
+let cpuPumping = false;
+
+async function pumpCpu() {
+  if (cpuPumping) return;
+  cpuPumping = true;
+  try {
+    let guard = 0;
+    while (STATE && STATE.room && STATE.room.cpu_thinking && guard < 80) {
+      guard += 1;
+      await send({ type: "cpu_step" });   // send の中で演出の再生を待つ
+    }
+  } finally {
+    cpuPumping = false;
   }
 }
 
@@ -335,6 +357,7 @@ function monsterCard(m, opts) {
   if (m.is_demon) el.classList.add("demon");
   if (m.fatigue > 0) el.classList.add("fatigued");
   if (opts.done) el.classList.add("done");
+  if (opts.pick) el.classList.add("pick");   // 今まさに選んでもらいたいカード
 
   // 被弾の演出（点滅・爪痕）は、このカードが移動しているなら
   // 動き終わってから出す。動きながら斬られると何が起きたか分からないため。
@@ -351,12 +374,13 @@ function monsterCard(m, opts) {
     el.classList.add("clickable");
     el.title = opts.title || "";
   }
-  if (TOUCH) {
-    // スマホは「タップで詳細を開く → ボタンで実行」の2段階にする。
-    // 指が当たっただけで交代してしまう事故を防げるので、そのほうが安全。
-    el.addEventListener("click", () => openSheet(monsterZoom(m), opts.onClick, opts.actionLabel));
-  } else if (opts.onClick) {
+  // タップ・クリックはそのまま実行する（スマホでも確認は挟まない）。
+  // 操作できないカードだけ、スマホではタップで詳細を見られるようにしておく
+  // （PCはマウスを乗せれば見られるが、スマホにはその手段が無いため）。
+  if (opts.onClick) {
     el.addEventListener("click", opts.onClick);
+  } else if (TOUCH) {
+    el.addEventListener("click", () => openSheet(monsterZoom(m), null, ""));
   }
 
   const hpRate = Math.max(0, Math.min(1, m.hp / m.hp_max));
@@ -425,11 +449,11 @@ function itemCard(c, usable, onClick) {
   const el = document.createElement("div");
   el.className = "item-card " + (usable ? "usable" : "disabled");
   if (RED_SUITS.has(c.suit)) el.classList.add("red");
-  if (TOUCH) {
-    el.addEventListener("click", () => openSheet(
-      itemZoom(c, usable), usable ? onClick : null, "🎒 このカードを使う"));
-  } else if (usable) {
+  // 使えるカードはタップで即使用。使えないカードはスマホなら詳細だけ開く
+  if (usable) {
     el.addEventListener("click", onClick);
+  } else if (TOUCH) {
+    el.addEventListener("click", () => openSheet(itemZoom(c, usable), null, ""));
   }
   const text = c.effect ? c.effect.text : "";
   el.innerHTML =
@@ -457,6 +481,8 @@ function monsterHandCard(c, i, selected, placeable) {
   if (placeable) {
     el.title = "クリックで場に出す（バトル場が空ならそこへ、あとはベンチに左から詰めて置く）";
     el.addEventListener("click", () => placeAuto(i));
+  } else if (TOUCH) {
+    el.addEventListener("click", () => openSheet(monsterHandZoom(c), null, ""));
   }
   attachHover(el, monsterHandZoom(c));
   return el;
@@ -639,30 +665,46 @@ function render() {
   // 相手ベンチは伏せ札で中身が分からないので、枠の位置を目印に動きを追う
   fill($("opBench"), op.bench, { mine: false, trackPrefix: "opbench" });
 
-  // 攻撃 or 交代のどちらかを使い終えたら、バトル場・ベンチのカードを
-  // アイテム手札の「使えない」表示と同じ薄暗さにして、行動済みだと一目で分かるようにする。
-  const fieldSpent = !!me.attacked || me.swaps_left <= 0;
+  // 薄暗さは「その枠でできる事を使い切ったか」で決める。枠ごとに別々に見る。
+  //   バトル場 … 攻撃を使ったら暗くする
+  //   ベンチ   … 交代を使ったら暗くする
+  // まとめて暗くすると、交代した直後のバトル場（まだ攻撃できる）まで
+  // 暗くなってしまい、攻撃できないと勘違いさせてしまう。
+  const battleSpent = !!me.attacked;
+  const benchSpent = me.swaps_left <= 0;
 
   // 配置は手札をクリックした時点で自動的に決まるので、空き枠は押せない飾り。
+  // 攻撃はバトル場のカードを直接クリックする（専用ボタンは廃止した）
+  const atk = (byType.attack || [])[0];
   const battleBox = $("myBattle");
   battleBox.innerHTML = "";
   battleBox.appendChild(monsterCard(me.battle, {
     mine: true,
     flash: flashClass(me.battle),
-    done: fieldSpent,
+    done: battleSpent,
+    onClick: atk ? () => send({ type: "attack" }) : null,
+    actionLabel: "⚔️ 攻撃する",
+    title: atk ? atk.label + "（クリックで攻撃）" : attackBlockedLabel(STATE, me),
   }));
 
+  // バトル場が空いて繰り上げを選ぶ番のときは、交代より優先してこちらを出す
+  const mustPromote = STATE.pending_promote === STATE.viewer;
   const benchBox = $("myBench");
   benchBox.innerHTML = "";
   me.bench.forEach((m, i) => {
+    const promote = (byType.promote || []).find((a) => a.bench === i);
     const swap = (byType.swap || []).find((a) => a.bench === i);
     benchBox.appendChild(monsterCard(m, {
       mine: true,
       flash: flashClass(m),
-      done: fieldSpent,
-      onClick: swap ? () => send({ type: "swap", bench: i }) : null,
-      actionLabel: "🔄 バトル場と交代する",
-      title: swap ? "クリックでバトル場と交代" : "",
+      // 選ばせている最中は、押せるカードを暗くしない
+      done: benchSpent && !mustPromote,
+      pick: !!promote,
+      onClick: promote ? () => send({ type: "promote", bench: i })
+               : swap ? () => send({ type: "swap", bench: i }) : null,
+      actionLabel: promote ? "🔀 バトル場に出す" : "🔄 バトル場と交代する",
+      title: promote ? "クリックでバトル場へ出す"
+             : swap ? "クリックでバトル場と交代" : "",
     }));
   });
 
@@ -688,14 +730,6 @@ function render() {
   });
 
   // --- 操作ボタン ---
-  const atk = (byType.attack || [])[0];
-  const atkBtn = $("attackBtn");
-  atkBtn.disabled = !atk;
-  // 押せないときは「なぜ押せないか」をボタン自身に書く。
-  // 疲労で撃てないのか、もう撃ったのかがボタンを見ただけで分かるように。
-  atkBtn.textContent = atk ? atk.label : attackBlockedLabel(STATE, me);
-  atkBtn.title = atk ? "" : atkBtn.textContent;
-
   const canEnd = !!(byType.end_turn || []).length;
   const endBtn = $("endTurnBtn");
   endBtn.disabled = !canEnd;
@@ -740,6 +774,18 @@ function render() {
     if (i === arr.length - 1) d.classList.add("newest");
     logBox.appendChild(d);
   });
+
+  // いま何を待っているのかを、ログの最後にそっと添える。
+  // これは「起きた出来事」ではなく「今の状態」なので、履歴には残さず
+  // 描き直すたびに付け替える。止まって見えるときの不安をなくすのが目的。
+  const waitMsg = waitingText(STATE, op);
+  if (waitMsg) {
+    const w = document.createElement("div");
+    w.className = "logwait";
+    w.textContent = waitMsg;
+    logBox.appendChild(w);
+  }
+
   // スクロールバーがあるのは logList 自身ではなく、外側の .tabpanel（#panel-log）。
   // logList にスクロール位置を設定しても何も起きないので、親のほうを動かす。
   const logPanel = logBox.parentElement;
@@ -774,6 +820,10 @@ function render() {
 const MOVE_MS = 1000;   // 移動にかける時間（経路が見える程度に、もたつかない速さ）
 const GHOST_MS = 1000;  // 消えるカードが薄れて消えるまでの時間
 const CLAW_MS = 1500;   // 爪痕が走って消えるまで（style.css の clawSlash と揃えること）
+/* 攻撃側が動き出してから、相手に当たるまでの間。
+   同時だと「どちらが殴ったのか」が読み取れないので、
+   必ず 揺れ → 少し遅れて爪痕 の順になるように間を空ける。 */
+const FX_IMPACT_MS = 250;
 const SHAKE_MS = 1000;  // 攻撃モーションの長さ（style.css の attackShake と揃えること）
 const FX_HOLD_MAX = 2600;  // どんなに重なってもこれ以上は待たせない
 
@@ -812,6 +862,26 @@ function beginFxFrame() {
   const seq = STATE && STATE.fx ? STATE.fx.seq : null;
   fxFresh = seq != null && seq !== lastFxSeq;
   if (fxFresh) lastFxSeq = seq;
+  if (fxFresh) showCallout(STATE.fx);
+}
+
+/* 画面中央に、使ったアイテム名や攻撃の口上を大きく出す。
+   ログは流れて見落とすので、その瞬間だけ主役を張らせる。 */
+let calloutTimer = null;
+
+function showCallout(fx) {
+  if (!fx || !fx.title) return;
+  const box = $("callout");
+  if (!box) return;
+  box.className = "callout " + (fx.tone || "buff");
+  box.innerHTML = '<div class="callout-title">' + escapeHtml(fx.title) + "</div>" +
+    (fx.cry ? '<div class="callout-cry">「' + escapeHtml(fx.cry) + "」</div>" : "");
+  // いったん消してから付け直さないと、続けて出したときにアニメが再生されない
+  box.classList.remove("show");
+  void box.offsetWidth;
+  box.classList.add("show");
+  if (calloutTimer) clearTimeout(calloutTimer);
+  calloutTimer = setTimeout(() => box.classList.remove("show"), 1600);
 }
 
 function snapshotCards() {
@@ -857,11 +927,11 @@ function animateCards(before) {
     }
 
     // 攻撃モーション中のカードは、揺れと移動が transform を奪い合うので動かさない
-    if (el.classList.contains("attacking")) { applyPendingFx(el, 0); return; }
+    if (el.classList.contains("attacking")) { applyPendingFx(el, FX_IMPACT_MS); return; }
 
     if (!from) {                      // 新しく出てきたカード
       el.classList.add("card-appear");
-      applyPendingFx(el, 0);
+      applyPendingFx(el, FX_IMPACT_MS);
       return;
     }
 
@@ -873,7 +943,7 @@ function animateCards(before) {
     const scale = to.width > 0 ? from.rect.width / to.width : 1;
     const scaled = Math.abs(scale - 1) > 0.05;
     if (Math.abs(dx) < 2 && Math.abs(dy) < 2 && !scaled) {   // 動いていない
-      applyPendingFx(el, 0);
+      applyPendingFx(el, FX_IMPACT_MS);
       return;
     }
 
@@ -939,6 +1009,19 @@ function spawnGhost(info) {
   const g = info.el.cloneNode(true);
   g.removeAttribute("data-cardkey");     // 次のスナップショットで拾われないように
   g.classList.add("card-ghost");
+
+  // 攻撃で倒されたカードは、抜け殻に爪痕を刻んでから薄れさせる。
+  // 倒れたカードは盤面から消えてしまうので、こうしないと
+  // 「斬られて倒れた」のか「勝手に消えた」のか分からない。
+  if (fxIsNew() && STATE.fx && STATE.fx.target != null &&
+      info.el.dataset.cardkey === "m" + STATE.fx.target) {
+    g.classList.add("clawed");
+    if (!g.querySelector(".claw")) {
+      const claw = document.createElement("div");
+      claw.className = "claw";
+      g.appendChild(claw);
+    }
+  }
   g.style.left = r.left + "px";
   g.style.top = r.top + "px";
   g.style.width = r.width + "px";
@@ -970,8 +1053,33 @@ function attackBlockedLabel(st, me) {
   return "⚔️ 攻撃（いまは攻撃できない）";
 }
 
+/* ログの末尾に出す「いま何を待っているか」の1行。
+   進行が止まって見えるとき、誰の操作待ちなのかが分かるようにする。 */
+function waitingText(st, op) {
+  if (st.winner !== null && st.winner !== undefined) return "";
+  const pend = st.pending_promote;
+  if (pend !== null && pend !== undefined) {
+    return pend === st.viewer
+      ? "⏳ バトル場へ出すカードを選んでください…"
+      : "⏳ " + op.name + " がバトル場へ出すカードを選んでいます…";
+  }
+  if (!st.is_my_turn) {
+    return "⏳ " + op.name + " が「ターン終了」を押すのを待っています…";
+  }
+  return "⏳ あなたが「ターン終了」を押すのを待っています…";
+}
+
 function hintText(st, me, byType) {
   if (st.winner !== null && st.winner !== undefined) return "ゲーム終了";
+
+  // バトル場の繰り上げ待ちは、手番より優先して案内する
+  if (st.pending_promote === st.viewer) {
+    return "🔀 バトル場が空きました！ベンチから出すモンスターをクリックしてね";
+  }
+  if (st.pending_promote !== null && st.pending_promote !== undefined) {
+    return "⏳ 相手がバトル場に出すモンスターを選んでいます…";
+  }
+
   if (!st.is_my_turn) {
     return st.room && st.room.mode === "lan"
       ? "相手の番です。待ってね…" : "CPUが考え中…";
@@ -983,22 +1091,24 @@ function hintText(st, me, byType) {
     return "👉 もうできる事はありません。「ターン終了」を押してね";
   }
 
-  // 攻撃を残したまま終わりそうなときは、それを最優先で知らせる
+  // 攻撃を残したまま終わりそうなときは、それを最優先で知らせる。
+  // 攻撃ボタンは無くしたので、どこを押せば攻撃できるかもここで案内する。
   if (st.attack_chance === "after_swap") {
-    return "⚠️ バトル場は攻撃できないけど、ベンチと交代すればまだ攻撃できるよ";
+    return "⚠️ バトル場は攻撃できないけど、ベンチをクリックして交代すればまだ攻撃できるよ";
   }
   if (st.attack_chance === "now") {
-    return "⚔️ まだ攻撃していません";
+    return "⚔️ バトル場の自分のカードをクリックで攻撃！";
   }
 
   const bits = [];
+  // 攻撃できない理由は、盤面を見ても分かりにくいので言葉で出す
+  if (me.attacked) bits.push("✅ このターンは攻撃済み");
+  else if (me.battle && me.battle.fatigue > 0) {
+    bits.push("😴 バトル場は疲労中（あと" + me.battle.fatigue + "ターン）");
+  }
   if ((byType.place || []).length) bits.push("🃏 配置できるモンスターがいます");
-  if (me.battle && me.battle.fatigue > 0) bits.push("バトル場は疲労中（攻撃できない）");
   if (me.item_used) bits.push("アイテムは使用済み");
   if (me.swaps_left <= 0) bits.push("交代は使用済み");
-  if (!byType.attack && me.battle && me.battle.fatigue <= 0 && me.attacked) {
-    bits.push("このターンはもう攻撃済み");
-  }
   if (me.attacked) bits.push("⏭️ 終わったら「ターン終了」を押してね");
   return bits.join(" / ") || "行動を選んでね";
 }
@@ -1128,7 +1238,6 @@ async function applyOptions() {
 }
 
 /* ============================================================== 起動 */
-$("attackBtn").addEventListener("click", () => send({ type: "attack" }));
 $("endTurnBtn").addEventListener("click", () => {
   // 攻撃は1ターンに1回きり。使わずに終わるのはもったいないので引き止める。
   // 「交代すれば撃てる」場合も対象（交代しても攻撃権は残るため）。

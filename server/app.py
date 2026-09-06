@@ -19,9 +19,11 @@ import os
 
 from flask import Flask, jsonify, request, send_from_directory
 
+from engine import cards
 from engine.ai import CPU_LEVEL_LABELS, CPU_LEVELS, DEFAULT_CPU_LEVEL
 from engine.game import DEFAULT_OPTIONS
 from engine.reference import build_reference
+from engine import skins as skin_store
 from server.rooms import REGISTRY, RoomError
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -113,6 +115,32 @@ def api_options():
     return jsonify({
         "options": LAST_OPTIONS["value"],
         "cpu_levels": CPU_LEVEL_LABELS,
+        "skins": skin_store.available_skins(),
+        "current_skin": skin_store.current_skin_id(),
+    })
+
+
+@app.route("/api/skin", methods=["POST"])
+def api_skin():
+    """スキン（カード名の見た目セット）を切り替える。
+
+    skin_config.json に保存（次回サーバー起動時の既定値用）した上で、
+    cards.apply_skin() を呼んでその場で反映する。サーバー再起動は不要
+    （「新しい設定でゲームを始める」＝rematch すれば次の対戦から新しい名前になる）。
+    """
+    global REFERENCE
+    b = _body()
+    skin_id = b.get("skin")
+    valid_ids = {s["id"] for s in skin_store.available_skins()}
+    if skin_id not in valid_ids:
+        return jsonify({"error": "そのスキンは存在しません。"}), 400
+    skin_store.set_current_skin(skin_id)
+    cards.apply_skin(skin_id)
+    REFERENCE = None  # カード図鑑のキャッシュも作り直す
+    return jsonify({
+        "ok": True,
+        "skin": skin_id,
+        "message": "スキンを「{}」に切り替えました。次に始める対戦から反映されます。".format(skin_id),
     })
 
 

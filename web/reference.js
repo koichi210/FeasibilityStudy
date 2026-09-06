@@ -30,9 +30,9 @@
 
     h += '<div class="ref-lead">🏟️ <b>場の構成</b></div>';
     h += '<div class="ref-note">バトル場1枚＋デッキ<b>' + c.bench_size + "</b>枚。" +
-           "バトル場のモンスターだけが攻撃・被攻撃の対象になる。</div>";
+           "バトル場のエネミーだけが攻撃・被攻撃の対象になる。</div>";
 
-    h += '<div class="ref-lead">🃏 <b>モンスターの配置</b></div>';
+    h += '<div class="ref-lead">🃏 <b>エネミーの配置</b></div>';
     h += '<div class="ref-note">場が空くと、山札から自動で「ベンチ」にカードが来る。<br>' +
            "<b>クリックして選び、空いている枠をクリックすると配置</b>される（回数制限なし）。<br>" +
            "ゲーム開始時の最初の配置だけは、先攻・後攻が不公平にならないよう自動で場に出る。</div>";
@@ -44,10 +44,10 @@
 
     h += '<div class="ref-lead">⚔️ <b>ダメージ計算</b></div>';
     h += '<div class="ref-note">ダメージ ＝ 攻撃力 － 相手の防御力（最低 <b>' + c.min_damage +
-           "</b> は必ず通る）。<br>モンスターのHPは全員共通で <b>" + c.monster_hp + "</b>。</div>";
+           "</b> は必ず通る）。<br>エネミーのHPは全員共通で <b>" + c.enemy_hp + "</b>。</div>";
 
     h += '<div class="ref-lead">💥 <b>トレーナーへのダメージ</b></div>';
-    h += '<div class="ref-note">自分のモンスターが<b>相手に倒された</b>とき <b>' +
+    h += '<div class="ref-note">自分のエネミーが<b>相手に倒された</b>とき <b>' +
            c.kill_trainer_damage + "</b>ダメージ。<br>" +
            "相手の場が空のときに<b>直接攻撃</b>すると、攻撃力そのままダメージが入る。</div>";
 
@@ -57,10 +57,10 @@
 
     h += '<div class="ref-lead">👹 <b>魔王</b></div>';
     h += '<div class="ref-note">♠A「魔王降臨」を出すと、HP・攻撃・防御が圧倒的な魔王に変身。<br>' +
-           esc(ref.monster.demon.text) + "</div>";
+           esc(ref.enemy.demon.text) + "</div>";
 
     h += '<div class="ref-lead">⚙️ <b>ゲームオプション</b></div>';
-    h += '<div class="ref-note">「モンスターの技」「魔王」のON/OFF、CPUの強さ（🐣初級／⚔️中級／🔥上級）は、' +
+    h += '<div class="ref-note">「エネミーの技」「魔王」のON/OFF、CPUの強さ（🐣初級／⚔️中級／🔥上級）は、' +
            "右上の⚙️オプションからいつでも変更できる。</div>";
 
     return h;
@@ -92,9 +92,9 @@
     return h;
   }
 
-  /* -------------------------------------------------------- モンスター */
-  function monsterHtml(ref, full) {
-    const d = ref.monster;
+  /* -------------------------------------------------------- エネミー */
+  function enemyHtml(ref, full) {
+    const d = ref.enemy;
     const c = ref.constants;
     let h = "";
 
@@ -112,7 +112,7 @@
     h += "</div>";
 
     h += '<div class="ref-note">' +
-           "HPは全モンスター共通で <b>" + c.monster_hp + "</b>。" +
+           "HPは全エネミー共通で <b>" + c.enemy_hp + "</b>。" +
            "ダメージは <b>攻撃 − 相手の防御</b>（最低 " + c.min_damage + " は必ず通る）。<br>" +
            "<b>" + c.attacks_before_retire + "回攻撃したら強制退場</b>。倒されると自分のトレーナーに " +
            c.kill_trainer_damage + " ダメージ。" +
@@ -134,7 +134,7 @@
   }
 
   /* ------------------------------------------------------------ 表の生成 */
-  function faceTable(groups, isMonster) {
+  function faceTable(groups, isEnemy) {
     let h = "";
     groups.forEach((g) => {
       h += '<div class="ref-group ' + suitCls(g.suit) + '">';
@@ -145,7 +145,7 @@
         h += "<tr>";
         h += '<td class="ref-c">' + c.mark + c.rank_label + "</td>";
         h += '<td class="ref-n">' + esc(c.name) + "</td>";
-        if (isMonster) {
+        if (isEnemy) {
           h += '<td class="ref-s">⚔' + c.atk + " 🛡" + c.dfn + "</td>";
           h += '<td class="ref-t">' + esc(c.ability ? c.ability.text : "—") + "</td>";
         } else {
@@ -158,7 +158,7 @@
     return h;
   }
 
-  function numberTable(groups, isMonster) {
+  function numberTable(groups, isEnemy) {
     let h = '<div class="ref-numgrid">';
     groups.forEach((g) => {
       h += '<div class="ref-group ' + suitCls(g.suit) + '">';
@@ -167,7 +167,7 @@
       h += '<table class="ref-table"><tbody>';
       g.cards.forEach((c) => {
         h += "<tr><td class=\"ref-c\">" + c.mark + c.rank_label + "</td>";
-        if (isMonster) {
+        if (isEnemy) {
           h += '<td class="ref-n">' + esc(c.name) + "</td>";
           h += '<td class="ref-s">⚔' + c.atk + " 🛡" + c.dfn + "</td>";
         } else {
@@ -186,5 +186,5 @@
     return i >= 0 ? text.slice(i + 1) : text;
   }
 
-  global.CardRef = { rulesHtml: rulesHtml, itemHtml: itemHtml, monsterHtml: monsterHtml, esc: esc };
+  global.CardRef = { rulesHtml: rulesHtml, itemHtml: itemHtml, enemyHtml: enemyHtml, esc: esc };
 })(window);

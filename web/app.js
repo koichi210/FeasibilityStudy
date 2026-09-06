@@ -26,7 +26,7 @@ let SESSION = null;   // {code, token, seat, mode}
 let RESUMABLE = null; // 「モード選択へ」で中断した対戦。あとから戻れるように保持する
 let STATE = null;     // サーバーから来た盤面
 let REF = null;       // カード図鑑（一度取ったら使い回す）
-let selectedMonsterHand = null;  // 選択中のモンスター手札のindex（null=未選択）
+let selectedEnemyHand = null;  // 選択中のエネミー手札のindex（null=未選択）
 let prevHp = {};      // uid -> 直前に描画したHP（ダメージ/回復の点滅判定用）
 let prevTrainerHp = { me: null, op: null };  // トレーナーHPの点滅判定用
 let lastRev = -1;
@@ -171,7 +171,7 @@ function enterGame(view) {
   hideLobby();
   RESUMABLE = null;   // 新しい対戦に入ったので、中断していたものはもう戻れない
   STATE = view;
-  selectedMonsterHand = null;
+  selectedEnemyHand = null;
   prevHp = {};
   prevTrainerHp = { me: null, op: null };
   lastRev = -1;
@@ -223,7 +223,7 @@ async function poll() {
 
 async function send(action) {
   if (busy || !SESSION) return;
-  selectedMonsterHand = null;
+  selectedEnemyHand = null;
   busy = true;
   document.body.style.cursor = "progress";
   try {
@@ -322,7 +322,7 @@ function statWithBuff(v, buff) {
   return v + '<span class="buffdelta">(+' + buff + ")</span>";
 }
 
-function monsterCard(m, opts) {
+function enemyCard(m, opts) {
   opts = opts || {};
   if (!m) {
     // 配置先は手札クリック時に自動で決まるので、空き枠は押せない
@@ -349,7 +349,7 @@ function monsterCard(m, opts) {
   }
   const el = document.createElement("div");
   el.className = "card";
-  // uid はモンスターが場にいる間ずっと変わらないので、
+  // uid はエネミーが場にいる間ずっと変わらないので、
   // 「ベンチ→バトル場」のように枠をまたいでも同じカードだと追跡できる。
   el.dataset.cardkey = "m" + m.uid;
   el.dataset.cardcode = m.code || "";
@@ -380,7 +380,7 @@ function monsterCard(m, opts) {
   if (opts.onClick) {
     el.addEventListener("click", opts.onClick);
   } else if (TOUCH) {
-    el.addEventListener("click", () => openSheet(monsterZoom(m), null, ""));
+    el.addEventListener("click", () => openSheet(enemyZoom(m), null, ""));
   }
 
   const hpRate = Math.max(0, Math.min(1, m.hp / m.hp_max));
@@ -412,11 +412,11 @@ function monsterCard(m, opts) {
     // 被弾の爪痕の器。実際に走るのは clawed クラスが付いた瞬間なので、
     // 置いておくだけならまだ何も見えない（移動が終わってから付ける）
     (fxLater.indexOf("clawed") >= 0 ? '<div class="claw"></div>' : "");
-  attachHover(el, monsterZoom(m));
+  attachHover(el, enemyZoom(m));
   return el;
 }
 
-function monsterZoom(m) {
+function enemyZoom(m) {
   let h = '<div class="zp-head"><span class="zp-mark">' + m.mark + m.rank_label + "</span>" +
             '<span class="zp-name">' + escapeHtml(m.name) + "</span></div>";
   h += '<div class="zp-stats">⚔ 攻撃 <b>' + statWithBuff(m.atk_now, m.atk_buff) +
@@ -464,8 +464,8 @@ function itemCard(c, usable, onClick) {
   return el;
 }
 
-/* --------------------------------------- モンスター手札（配置前）の描画 */
-function monsterHandCard(c, i, selected, placeable) {
+/* --------------------------------------- エネミー手札（配置前）の描画 */
+function enemyHandCard(c, i, selected, placeable) {
   const el = document.createElement("div");
   el.className = "mh-card" + (RED_SUITS.has(c.suit) ? " red" : "") +
     (selected ? " selected" : "") + (placeable ? " placeable" : "");
@@ -482,13 +482,13 @@ function monsterHandCard(c, i, selected, placeable) {
     el.title = "クリックで場に出す（バトル場が空ならそこへ、あとはデッキに左から詰めて置く）";
     el.addEventListener("click", () => placeAuto(i));
   } else if (TOUCH) {
-    el.addEventListener("click", () => openSheet(monsterHandZoom(c), null, ""));
+    el.addEventListener("click", () => openSheet(enemyHandZoom(c), null, ""));
   }
-  attachHover(el, monsterHandZoom(c));
+  attachHover(el, enemyHandZoom(c));
   return el;
 }
 
-function monsterHandZoom(c) {
+function enemyHandZoom(c) {
   let h = '<div class="zp-head"><span class="zp-mark">' + c.mark + c.rank_label + "</span>" +
             '<span class="zp-name">' + escapeHtml(c.name) + "</span></div>";
   h += '<div class="zp-stats">⚔ 攻撃 <b>' + c.atk + "</b>　🛡 防御 <b>" + c.dfn + "</b></div>";
@@ -643,7 +643,7 @@ function render() {
   $("opHpFill").style.width = pct(op.trainer_hp, op.trainer_hp_max);
   $("opCounts").textContent =
     "🃏 山札 " + op.deck_count + "　🗑️ 捨札 " + op.discard_count + "　🎒 手札 " + op.hand_count + "枚" +
-    (op.monster_hand_count ? "　🐣 配置前 " + op.monster_hand_count + "体" : "");
+    (op.enemy_hand_count ? "　🐣 配置前 " + op.enemy_hand_count + "体" : "");
 
   $("myName").textContent = me.name;
   $("myHpText").textContent = me.trainer_hp + " / " + me.trainer_hp_max;
@@ -678,7 +678,7 @@ function render() {
   const atk = (byType.attack || [])[0];
   const battleBox = $("myBattle");
   battleBox.innerHTML = "";
-  battleBox.appendChild(monsterCard(me.battle, {
+  battleBox.appendChild(enemyCard(me.battle, {
     mine: true,
     flash: flashClass(me.battle),
     done: battleSpent,
@@ -694,7 +694,7 @@ function render() {
   me.bench.forEach((m, i) => {
     const promote = (byType.promote || []).find((a) => a.bench === i);
     const swap = (byType.swap || []).find((a) => a.bench === i);
-    benchBox.appendChild(monsterCard(m, {
+    benchBox.appendChild(enemyCard(m, {
       mine: true,
       flash: flashClass(m),
       // 選ばせている最中は、押せるカードを暗くしない
@@ -708,16 +708,16 @@ function render() {
     }));
   });
 
-  // --- モンスター手札（配置前） ---
-  // ※ サーバーを再起動しないまま画面だけ新しくなっていると monster_hand が
+  // --- エネミー手札（配置前） ---
+  // ※ サーバーを再起動しないまま画面だけ新しくなっていると enemy_hand が
   //   来ないことがある（起動しなおせば直る）ので、念のため空配列で受ける。
-  const monsterHand = me.monster_hand || [];
-  const mhBox = $("myMonsterHand");
+  const enemyHand = me.enemy_hand || [];
+  const mhBox = $("myEnemyHand");
   mhBox.innerHTML = "";
-  if (!monsterHand.length) mhBox.innerHTML = '<div class="acthint">手札なし</div>';
-  monsterHand.forEach((c, i) => {
+  if (!enemyHand.length) mhBox.innerHTML = '<div class="acthint">手札なし</div>';
+  enemyHand.forEach((c, i) => {
     const canPlace = (byType.place || []).some((a) => a.hand === i);
-    mhBox.appendChild(monsterHandCard(c, i, false, canPlace));
+    mhBox.appendChild(enemyHandCard(c, i, false, canPlace));
   });
 
   // --- 手札 ---
@@ -824,7 +824,7 @@ function renderChooser() {
   ch.cards.forEach((c, i) => {
     const el = document.createElement("div");
     el.className = "pickcard" + (RED_SUITS.has(c.suit) ? " red" : "");
-    const body = c.kind === "monster"
+    const body = c.kind === "enemy"
       ? '<div class="pick-stats">⚔ ' + c.atk + "　🛡 " + c.dfn + "</div>" +
         '<div class="pick-text">' + escapeHtml(c.ability ? c.ability.text : "技なし") + "</div>"
       : '<div class="pick-text">' + escapeHtml(c.effect ? c.effect.text : "") + "</div>";
@@ -1068,7 +1068,7 @@ function spawnGhost(info) {
 function optionSummary() {
   const o = (STATE && STATE.options) || {};
   const off = [];
-  if (!o.monster_abilities) off.push("技なし");
+  if (!o.enemy_abilities) off.push("技なし");
   else if (!o.demon_lord) off.push("魔王なし");
   return off.length ? "⚙️ " + off.join("・") : "";
 }
@@ -1108,10 +1108,10 @@ function hintText(st, me, byType) {
 
   // バトル場の繰り上げ待ちは、手番より優先して案内する
   if (st.pending_promote === st.viewer) {
-    return "🔀 バトル場が空きました！デッキから出すモンスターをクリックしてね";
+    return "🔀 バトル場が空きました！デッキから出すエネミーをクリックしてね";
   }
   if (st.pending_promote !== null && st.pending_promote !== undefined) {
-    return "⏳ 相手がバトル場に出すモンスターを選んでいます…";
+    return "⏳ 相手がバトル場に出すエネミーを選んでいます…";
   }
 
   if (!st.is_my_turn) {
@@ -1140,7 +1140,7 @@ function hintText(st, me, byType) {
   else if (me.battle && me.battle.fatigue > 0) {
     bits.push("😴 バトル場は疲労中（あと" + me.battle.fatigue + "ターン）");
   }
-  if ((byType.place || []).length) bits.push("🃏 配置できるモンスターがいます");
+  if ((byType.place || []).length) bits.push("🃏 配置できるエネミーがいます");
   if (me.item_used) bits.push("アイテムは使用済み");
   if (me.swaps_left <= 0) bits.push("交代は使用済み");
   if (me.attacked) bits.push("⏭️ 終わったら「ターン終了」を押してね");
@@ -1152,7 +1152,7 @@ function fill(box, list, opts) {
   list.forEach((m, i) => {
     const merged = Object.assign({}, opts, { flash: flashClass(m) });
     if (opts && opts.trackPrefix) merged.trackKey = opts.trackPrefix + i;
-    box.appendChild(monsterCard(m, merged));
+    box.appendChild(enemyCard(m, merged));
   });
 }
 
@@ -1161,8 +1161,8 @@ function pct(v, max) {
 }
 
 /* ------------------------------------------------- ダメージ/回復の点滅 */
-// モンスターのHPを前回の描画と比べて、"hit"（減った）/"heal"（増えた）を返す。
-// 呼ぶたびに記録も更新するので、同じモンスターについて1回だけ呼ぶこと。
+// エネミーのHPを前回の描画と比べて、"hit"（減った）/"heal"（増えた）を返す。
+// 呼ぶたびに記録も更新するので、同じエネミーについて1回だけ呼ぶこと。
 function flashClass(m) {
   if (!m) return null;
   const prev = prevHp[m.uid];
@@ -1204,7 +1204,7 @@ async function loadReference() {
     REF = await api("/api/reference");
     $("refRules").innerHTML = CardRef.rulesHtml(REF);
     $("refItem").innerHTML = CardRef.itemHtml(REF, false);
-    $("refMonster").innerHTML = CardRef.monsterHtml(REF, false);
+    $("refEnemy").innerHTML = CardRef.enemyHtml(REF, false);
   } catch (e) {
     $("refRules").innerHTML = '<div class="ref-note">読み込みに失敗しました: ' + e.message + "</div>";
     $("refItem").innerHTML = '<div class="ref-note">読み込みに失敗しました: ' + e.message + "</div>";
@@ -1235,10 +1235,11 @@ async function applyName() {
 
 /* ======================================================= オプション */
 let pendingLevel = "normal";   // オプション画面で選び中のCPUの強さ
+let SKIN_INFO = null;          // { skins: [...], current_skin: "arcana" }（初回だけ取得）
 
 function openOptions() {
   const o = (STATE && STATE.options) || {};
-  $("optAbilities").checked = !!o.monster_abilities;
+  $("optAbilities").checked = !!o.enemy_abilities;
   $("optDemon").checked = !!o.demon_lord;
   syncOptionLock();
 
@@ -1246,7 +1247,39 @@ function openOptions() {
   $("optLevelBlock").classList.toggle("hidden", !isCpu);
   if (isCpu) selectLevel((STATE.room.cpu_level) || "normal");
 
+  loadSkinOptions();
   $("optionOverlay").classList.remove("hidden");
+}
+
+async function loadSkinOptions() {
+  try {
+    if (!SKIN_INFO) SKIN_INFO = await api("/api/options");
+    renderSkinButtons(SKIN_INFO.current_skin);
+  } catch (e) { /* 取得できなくてもオプション画面自体は開けるようにしておく */ }
+}
+
+function renderSkinButtons(activeId) {
+  const box = $("optSkins");
+  if (!SKIN_INFO || !SKIN_INFO.skins) return;
+  box.innerHTML = "";
+  SKIN_INFO.skins.forEach((s) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "levelbtn" + (s.id === activeId ? " active" : "");
+    b.textContent = s.label;
+    b.dataset.skin = s.id;
+    b.addEventListener("click", () => selectSkin(s.id));
+    box.appendChild(b);
+  });
+}
+
+async function selectSkin(skinId) {
+  try {
+    const r = await api("/api/skin", { skin: skinId });
+    SKIN_INFO.current_skin = skinId;
+    renderSkinButtons(skinId);
+    showToast(r.message || "スキンを切り替えました。");
+  } catch (e) { showToast(e.message); }
 }
 
 function syncOptionLock() {
@@ -1266,7 +1299,7 @@ async function applyOptions() {
   $("optionOverlay").classList.add("hidden");
   const isCpu = !!(STATE && STATE.room && STATE.room.mode === "cpu");
   await rematch({
-    monster_abilities: $("optAbilities").checked,
+    enemy_abilities: $("optAbilities").checked,
     demon_lord: $("optAbilities").checked && $("optDemon").checked,
   }, isCpu ? pendingLevel : null);
 }

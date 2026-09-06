@@ -30,11 +30,11 @@
   </section>
 
   <section class="cardsec">
-    <h2>⚔️ モンスターカード</h2>
-    <p class="secnote" id="monsterSecNote">
-      自分のモンスターデッキ（52枚）から場に出ます。
+    <h2>⚔️ エネミーカード</h2>
+    <p class="secnote" id="enemySecNote">
+      自分のエネミーデッキ（52枚）から場に出ます。
     </p>
-    <div class="refbody" id="refMonster">読み込み中…</div>
+    <div class="refbody" id="refEnemy">読み込み中…</div>
   </section>
 
 </main>
@@ -46,16 +46,16 @@ fetch("/api/reference")
   .then((ref) => {
     document.getElementById("refRules").innerHTML = CardRef.rulesHtml(ref);
     document.getElementById("refItem").innerHTML = CardRef.itemHtml(ref, true);
-    document.getElementById("refMonster").innerHTML = CardRef.monsterHtml(ref, true);
-    document.getElementById("monsterSecNote").textContent =
-      "自分のモンスターデッキ（52枚）から場に出ます。バトル場1枚＋ベンチ" +
+    document.getElementById("refEnemy").innerHTML = CardRef.enemyHtml(ref, true);
+    document.getElementById("enemySecNote").textContent =
+      "自分のエネミーデッキ（52枚）から場に出ます。バトル場1枚＋ベンチ" +
       ref.constants.bench_size + "枚。";
   })
   .catch((e) => {
     const msg = '<div class="ref-note">読み込みに失敗しました。ゲームのサーバーが起動しているか確認してください。<br>' + e + "</div>";
     document.getElementById("refRules").innerHTML = msg;
     document.getElementById("refItem").innerHTML = msg;
-    document.getElementById("refMonster").innerHTML = "";
+    document.getElementById("refEnemy").innerHTML = "";
   });
 
 document.getElementById("printBtn").addEventListener("click", () => window.print());

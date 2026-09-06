@@ -84,12 +84,12 @@
       </div>
     </div>
 
-    <!-- ================= モンスター手札（配置前） ================= -->
-    <div class="hand-zone monsterhand-zone">
+    <!-- ================= エネミー手札（配置前） ================= -->
+    <div class="hand-zone enemyhand-zone">
       <div class="zone-label">🃏 ベンチ
         <span class="hint">（クリックでそのまま場に出る）</span>
       </div>
-      <div class="hand" id="myMonsterHand"></div>
+      <div class="hand" id="myEnemyHand"></div>
     </div>
 
     <!-- ================= 手札 ================= -->
@@ -114,7 +114,7 @@
       <button class="tab active" data-tab="log">📜 ログ</button>
       <button class="tab" data-tab="rules">📖 ルール</button>
       <button class="tab" data-tab="item">🎒 アイテム</button>
-      <button class="tab" data-tab="monster">⚔️ モンスター</button>
+      <button class="tab" data-tab="enemy">⚔️ エネミー</button>
     </div>
 
     <div class="tabbody">
@@ -127,8 +127,8 @@
       <div class="tabpanel" id="panel-item">
         <div class="refbody" id="refItem">読み込み中…</div>
       </div>
-      <div class="tabpanel" id="panel-monster">
-        <div class="refbody" id="refMonster">読み込み中…</div>
+      <div class="tabpanel" id="panel-enemy">
+        <div class="refbody" id="refEnemy">読み込み中…</div>
       </div>
     </div>
 
@@ -287,7 +287,7 @@
 
     <label class="optrow">
       <input type="checkbox" id="optAbilities">
-      <span class="optlabel">⚔️ モンスターの技を使う</span>
+      <span class="optlabel">⚔️ エネミーの技を使う</span>
       <span class="optdesc">
         オフにすると、J・Q・K・A の特殊能力が発動しなくなります。<br>
         ルールがシンプルになるので、はじめての人におすすめ。
@@ -299,7 +299,7 @@
       <span class="optlabel">👹 魔王（♠A）を使う</span>
       <span class="optdesc">
         オフにすると、♠A を出しても魔王が降臨しなくなります。<br>
-        ※「モンスターの技」がオフのときは、こちらもオフになります。
+        ※「エネミーの技」がオフのときは、こちらもオフになります。
       </span>
     </label>
 
@@ -311,6 +311,15 @@
         <button type="button" class="levelbtn" data-level="hard">🔥 上級</button>
       </div>
       <div class="optdesc">CPU対戦のときだけ有効です（LAN対戦では使いません）。</div>
+    </div>
+
+    <div class="optlevelblock" id="optSkinBlock">
+      <div class="optlabel">🎨 スキン（カードの見た目）</div>
+      <div class="optlevels" id="optSkins"></div>
+      <div class="optdesc" id="optSkinMsg">
+        カード名・技名・アイテム名の見た目セットを切り替えます。<br>
+        選ぶと<b>次に始める対戦から</b>反映されます（サーバー再起動は不要）。
+      </div>
     </div>
 
     <div class="optnote">

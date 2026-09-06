@@ -29,11 +29,11 @@
            c.trainer_hp + "</b>。</div>";
 
     h += '<div class="ref-lead">🏟️ <b>場の構成</b></div>';
-    h += '<div class="ref-note">バトル場1枚＋ベンチ<b>' + c.bench_size + "</b>枚。" +
+    h += '<div class="ref-note">バトル場1枚＋デッキ<b>' + c.bench_size + "</b>枚。" +
            "バトル場のモンスターだけが攻撃・被攻撃の対象になる。</div>";
 
     h += '<div class="ref-lead">🃏 <b>モンスターの配置</b></div>';
-    h += '<div class="ref-note">場が空くと、山札から自動で「モンスター手札」にカードが来る。<br>' +
+    h += '<div class="ref-note">場が空くと、山札から自動で「ベンチ」にカードが来る。<br>' +
            "<b>クリックして選び、空いている枠をクリックすると配置</b>される（回数制限なし）。<br>" +
            "ゲーム開始時の最初の配置だけは、先攻・後攻が不公平にならないよう自動で場に出る。</div>";
 

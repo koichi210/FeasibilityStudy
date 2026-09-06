@@ -337,7 +337,7 @@ function monsterCard(m, opts) {
     e.className = "card hidden-card";
     // 中身が分からないので、場所そのものを目印にして動きを追う
     if (opts.trackKey) e.dataset.cardkey = opts.trackKey;
-    e.title = "相手のベンチ（中身は非公開）";
+    e.title = "相手のデッキ（中身は非公開）";
     e.innerHTML =
       '<div class="card-top"><span class="mark">🂠</span><span class="rank">？</span></div>' +
       '<div class="card-name">？？？</div>' +
@@ -390,7 +390,7 @@ function monsterCard(m, opts) {
   if (m.curse > 0) badges.push('<span class="chip warn">🩸 呪' + m.curse + "</span>");
   if (m.is_demon) badges.push('<span class="chip info">👹 あと' + m.demon_turns + "T</span>");
   if (m.bench_turns_left != null) {
-    badges.push('<span class="chip warn">⌛ ベンチあと' + m.bench_turns_left + "T</span>");
+    badges.push('<span class="chip warn">⌛ デッキあと' + m.bench_turns_left + "T</span>");
   }
   if (m.revived) badges.push('<span class="chip good">🔥 復活済</span>');
   badges.push('<span class="chip info">残攻撃' + m.attacks_left + "</span>");
@@ -436,7 +436,7 @@ function monsterZoom(m) {
   if (m.def_buff) st.push("🛡️ 聖女クイーンの支援：防御+" + m.def_buff);
   if (m.is_demon) st.push("👹 魔王（あと" + m.demon_turns + "ターンで消滅）");
   if (m.bench_turns_left != null) {
-    st.push("⌛ ベンチにいられるのはあと" + m.bench_turns_left + "ターン（切れると強制退場）");
+    st.push("⌛ デッキにいられるのはあと" + m.bench_turns_left + "ターン（切れると強制退場）");
   }
   if (m.revived) st.push("🔥 不死鳥で復活済み（もう復活できない）");
   st.push("🚪 あと " + m.attacks_left + " 回攻撃したら退場");
@@ -479,7 +479,7 @@ function monsterHandCard(c, i, selected, placeable) {
     '<div class="mh-stats"><span class="atk">⚔ ' + c.atk + "</span><span class=\"def\">🛡 " + c.dfn + "</span></div>" +
     '<div class="mh-ability">' + (c.ability ? escapeHtml(c.ability.text) : "") + "</div>";
   if (placeable) {
-    el.title = "クリックで場に出す（バトル場が空ならそこへ、あとはベンチに左から詰めて置く）";
+    el.title = "クリックで場に出す（バトル場が空ならそこへ、あとはデッキに左から詰めて置く）";
     el.addEventListener("click", () => placeAuto(i));
   } else if (TOUCH) {
     el.addEventListener("click", () => openSheet(monsterHandZoom(c), null, ""));
@@ -1108,7 +1108,7 @@ function hintText(st, me, byType) {
 
   // バトル場の繰り上げ待ちは、手番より優先して案内する
   if (st.pending_promote === st.viewer) {
-    return "🔀 バトル場が空きました！ベンチから出すモンスターをクリックしてね";
+    return "🔀 バトル場が空きました！デッキから出すモンスターをクリックしてね";
   }
   if (st.pending_promote !== null && st.pending_promote !== undefined) {
     return "⏳ 相手がバトル場に出すモンスターを選んでいます…";
@@ -1128,7 +1128,7 @@ function hintText(st, me, byType) {
   // 攻撃を残したまま終わりそうなときは、それを最優先で知らせる。
   // 攻撃ボタンは無くしたので、どこを押せば攻撃できるかもここで案内する。
   if (st.attack_chance === "after_swap") {
-    return "⚠️ バトル場は攻撃できないけど、ベンチをクリックして交代すればまだ攻撃できるよ";
+    return "⚠️ バトル場は攻撃できないけど、デッキをクリックして交代すればまだ攻撃できるよ";
   }
   if (st.attack_chance === "now") {
     return "⚔️ バトル場の自分のカードをクリックで攻撃！";
@@ -1279,7 +1279,7 @@ $("endTurnBtn").addEventListener("click", () => {
   const chance = STATE.attack_chance;
   if (chance) {
     const msg = chance === "after_swap"
-      ? "まだ攻撃していません。\nベンチと交代すれば、このターンまだ攻撃できます。\n\nこのままターンを終了しますか？"
+      ? "まだ攻撃していません。\nデッキと交代すれば、このターンまだ攻撃できます。\n\nこのままターンを終了しますか？"
       : "まだ攻撃していません。\n\nこのままターンを終了しますか？";
     if (!confirm(msg)) return;
   }

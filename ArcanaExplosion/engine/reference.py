@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Dict, List
 
 from .cards import (BALANCE, RANKS, SUIT_MARK, SUIT_NAME, SUITS,
-                    build_item_deck, build_monster_deck, rank_label)
+                    build_item_deck, build_enemy_deck, rank_label)
 
 B = BALANCE
 
@@ -53,7 +53,7 @@ def _card_row(c) -> dict:
         "rank_label": rank_label(c.rank),
         "name": c.name,
     }
-    if c.kind == "monster":
+    if c.kind == "enemy":
         d["atk"] = c.atk
         d["dfn"] = c.dfn
         d["ability"] = ({"name": c.ability.name, "text": c.ability.text}
@@ -64,7 +64,7 @@ def _card_row(c) -> dict:
     return d
 
 
-def _monster_suit_rules() -> List[dict]:
+def _enemy_suit_rules() -> List[dict]:
     """スートごとの性格と、数字カードの計算式。"""
     mult = B["rank_base_multiplier"]
     out = []
@@ -110,7 +110,7 @@ def _item_suit_rules() -> List[dict]:
 
 
 def build_reference() -> dict:
-    monsters = {c.code: c for c in build_monster_deck()}
+    enemies = {c.code: c for c in build_enemy_deck()}
     items = {c.code: c for c in build_item_deck()}
 
     def group(src, ranks):
@@ -120,7 +120,7 @@ def build_reference() -> dict:
                 "suit": s,
                 "mark": SUIT_MARK[s],
                 "name": SUIT_NAME[s],
-                "role": SUIT_ROLE[s] if src is monsters else ITEM_SUIT_ROLE[s],
+                "role": SUIT_ROLE[s] if src is enemies else ITEM_SUIT_ROLE[s],
                 "cards": [_card_row(src[s + rank_label(r)]) for r in ranks],
             })
         return out
@@ -129,7 +129,7 @@ def build_reference() -> dict:
     return {
         "constants": {
             "trainer_hp": B["trainer_hp"],
-            "monster_hp": B["monster_hp"],
+            "enemy_hp": B["enemy_hp"],
             "min_damage": B["min_damage"],
             "kill_trainer_damage": B["kill_trainer_damage"],
             "bench_size": B["bench_size"],
@@ -139,10 +139,10 @@ def build_reference() -> dict:
             "fatigue_turns": B["fatigue_turns"],
             "item_draw_per_turn": B["item_draw_per_turn"],
         },
-        "monster": {
-            "suit_rules": _monster_suit_rules(),
-            "faces": group(monsters, FACE_RANKS),
-            "numbers": group(monsters, NUMBER_RANKS),
+        "enemy": {
+            "suit_rules": _enemy_suit_rules(),
+            "faces": group(enemies, FACE_RANKS),
+            "numbers": group(enemies, NUMBER_RANKS),
             "demon": {
                 "hp": d["hp"], "atk": d["atk"], "def": d["def"], "turns": d["turns"],
                 "text": "♠A「魔王降臨」で登場。バトル場にいる間{}ターンで消滅。"

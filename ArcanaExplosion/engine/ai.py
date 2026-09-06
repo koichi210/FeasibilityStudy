@@ -75,13 +75,13 @@ def _score_item(g: Game, p: Player, o: Player, card, conf: dict) -> float:
     if t == "free_swap":
         return 5
     if t == "deploy":
-        return 15 if len(p.monster_hand) < B["monster_hand_size_max"] else -1
+        return 15 if len(p.enemy_hand) < B["enemy_hand_size_max"] else -1
     if t == "draw_items":
         return 20
     if t == "revive":
-        return 25 if len(p.monster_hand) < B["monster_hand_size_max"] else -1
+        return 25 if len(p.enemy_hand) < B["enemy_hand_size_max"] else -1
     if t == "sacrifice":
-        # 瀕死のモンスターを捧げるのは有効
+        # 瀕死のエネミーを捧げるのは有効
         return (v + 20) if bm and hp_rate < 0.3 else -1
     if t == "forbidden":
         # 相手の主力を消せるなら
@@ -94,12 +94,22 @@ def _score_item(g: Game, p: Player, o: Player, card, conf: dict) -> float:
         # ただし代償で自滅してしまうなら使わない
         cost = B["divine_army"]["cost_hp"]
         return 200 if p.trainer_hp > cost else -1
+    if t == "demon_army":
+        # いつでも使えるぶん、divine_army と違って「相手が瀕死」の保証がない。
+        # 代償で自滅するなら論外。相手が瀕死ならとどめの切り札、
+        # そうでなければ体力にかなり余裕がある時だけベンチ強化のおまけとして使う。
+        cost = B["demon_army"]["cost_hp"]
+        if p.trainer_hp <= cost:
+            return -1
+        if o.trainer_hp <= B["divine_army"]["trigger_hp"]:
+            return 200
+        return 30 if p.trainer_hp > cost * 2 else -1
     return 0
 
 
 def _hand_power(p: Player, i: int) -> int:
-    """モンスター手札のi番目の強さ（配置の優先度づけに使うだけ）。"""
-    c = p.monster_hand[i]
+    """エネミー手札のi番目の強さ（配置の優先度づけに使うだけ）。"""
+    c = p.enemy_hand[i]
     return c.atk + c.dfn
 
 
@@ -121,7 +131,7 @@ def _can_finish_now(p: Player, o: Player) -> bool:
     if p.battle.is_demon and o.battle and o.battle.is_demon:
         return False
     if o.battle is not None:
-        return False  # 相手の場にモンスターがいる間は直接攻撃にならない
+        return False  # 相手の場にエネミーがいる間は直接攻撃にならない
     atk = p.battle.base_atk + p.battle.atk_bonus
     if p.has_bench_ability("C_K_command"):
         atk += AV["C_K_command"]
@@ -157,7 +167,7 @@ def choose_action(g: Game, level: str = DEFAULT_CPU_LEVEL) -> dict:
         return max(by_type["promote"],
                    key=lambda a: _bench_power(p, a["bench"]))
 
-    # 0) モンスターの配置：置かないと何も始まらないので最優先。
+    # 0) エネミーの配置：置かないと何も始まらないので最優先。
     #    バトル場が空いているならまずそこへ、一番強いものを出す。
     if "place" in by_type:
         battle_places = [a for a in by_type["place"] if a["slot"] == "battle"]

@@ -10,6 +10,9 @@ _backups/
 # 個人のゲームオプション設定（人によって違うのでgitでは管理しない）
 user_options.json
 
+# 選択中のスキン（人によって違う。デフォルトはarcana。切り替えたらサーバー再起動が必要）
+skin_config.json
+
 # OS / エディタ
 Thumbs.db
 desktop.ini

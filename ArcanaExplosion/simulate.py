@@ -80,7 +80,7 @@ def main():
     print()
     print("💡 ターン数は「手番」の数（両者の合計）。1人あたりの手番はこの半分。")
     print("   目安：合計30〜40手番（1人15〜20手番）、先攻勝率45〜55%くらいだと健全。")
-    print("   ズレていたら balance.json の trainer_hp / monster_hp /")
+    print("   ズレていたら balance.json の trainer_hp / enemy_hp /")
     print("   kill_trainer_damage あたりを調整してね。")
 
 

@@ -2,13 +2,13 @@
   "_comment": "ゲームの数値パラメータ。ここだけ触ればバランス調整できる。コードは触らなくてよい。",
 
   "trainer_hp": 200,
-  "monster_hp": 100,
+  "enemy_hp": 100,
   "min_damage": 10,
   "kill_trainer_damage": 30,
 
   "bench_size": 3,
   "hand_size_max": 7,
-  "monster_hand_size_max": 7,
+  "enemy_hand_size_max": 7,
   "item_draw_per_turn": 1,
   "initial_hand_size": 3,
   "attacks_before_retire": 2,
@@ -30,16 +30,25 @@
     "hp": 250,
     "atk": 150,
     "def": 150,
-    "turns": 3
+    "turns": 3,
+    "splash": 0
   },
 
   "divine_army": {
-    "_comment": "神軍降臨（アイテム）で召喚される、J/Q/Kの上位互換モンスター用の数値",
+    "_comment": "神軍降臨（アイテム）で召喚される、J/Q/Kの上位互換エネミー用の数値",
     "trigger_hp": 40,
-    "cost_hp": 20,
+    "cost_hp": 10,
     "hp": 140,
     "atk_bonus": 25,
     "def_bonus": 15
+  },
+
+  "demon_army": {
+    "_comment": "魔神軍降臨（アイテム）で召喚される、♠♦の10/9/8の上位互換エネミー用の数値。神軍降臨よりランクは低いぶん、hp・補正値も控えめ",
+    "cost_hp": 50,
+    "hp": 120,
+    "atk_bonus": 15,
+    "def_bonus": 10
   },
 
   "ability_values": {

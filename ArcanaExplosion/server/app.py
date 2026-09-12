@@ -140,6 +140,8 @@ def api_skin():
     対戦中のプレイヤーが自分のスキンを変更する。
     （グローバルな設定ではなく、部屋の中でそのプレイヤーのスキン設定を変更する。
      これにより LAN対戦で相手と異なるスキンを使用できる。）
+
+    ⚠️ ゲーム進行中のスキン変更は禁止（ゲーム終了後に変更可能）
     """
     global REFERENCE
     b = _body()
@@ -152,6 +154,10 @@ def api_skin():
         room, seat = REGISTRY.authed(b.get("code"), b.get("token"))
     except RoomError as e:
         return _fail(e, 404)
+
+    # ゲーム進行中のスキン変更を禁止
+    if room.game and room.game.winner is None:
+        return jsonify({"error": "ゲーム進行中はスキンを変更できません。対戦が終わった後に変更してください。"}), 400
 
     # このプレイヤーのスキンを設定
     room.skins[seat] = skin_id
@@ -191,6 +197,13 @@ def api_room_create():
         room = REGISTRY.create(mode, options, b.get("name") or "", cpu_level)
     except RoomError as e:
         return _fail(e)
+
+    # ロビーで選んだスキンを適用
+    skin_id = b.get("skin")
+    if skin_id:
+        valid_ids = {s["id"] for s in skin_store.available_skins()}
+        if skin_id in valid_ids:
+            room.skins[0] = skin_id
     if options is not None:
         for k in DEFAULT_OPTIONS:
             LAST_OPTIONS["value"][k] = room.options[k]
@@ -212,6 +225,14 @@ def api_room_join():
         room, token = REGISTRY.join(b.get("code") or "", b.get("name") or "")
     except RoomError as e:
         return _fail(e)
+
+    # ロビーで選んだスキンを適用
+    skin_id = b.get("skin")
+    if skin_id:
+        valid_ids = {s["id"] for s in skin_store.available_skins()}
+        if skin_id in valid_ids:
+            room.skins[1] = skin_id
+
     return jsonify({
         "code": room.code,
         "token": token,

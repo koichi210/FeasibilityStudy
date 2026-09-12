@@ -88,6 +88,7 @@ function showLobby(screen) {
   updateResumeUi();
   if (screen === "lb-join") startRoomList(); else stopRoomList();
   if (screen !== "lb-wait" && screen !== "lb-join") stopPolling();
+  if (screen === "lb-skin") renderLobbySkinButtons();
 }
 
 function hideLobby() {
@@ -112,6 +113,10 @@ async function createRoom(mode, cpuLevel) {
   try {
     const body = { mode: mode, name: mode === "lan" ? playerName() : "あなた" };
     if (mode === "cpu" && cpuLevel) body.cpu_level = cpuLevel;
+    // ロビーで選んだスキン情報を渡す
+    if (SKIN_INFO && SKIN_INFO.current_skin) {
+      body.skin = SKIN_INFO.current_skin;
+    }
     const r = await api("/api/room/create", body);
     SESSION = { code: r.code, token: r.token, seat: r.seat, mode: mode };
     saveSession();
@@ -127,7 +132,12 @@ async function createRoom(mode, cpuLevel) {
 
 async function joinRoom(code) {
   try {
-    const r = await api("/api/room/join", { code: code, name: playerName() });
+    const body = { code: code, name: playerName() };
+    // ロビーで選んだスキン情報を渡す
+    if (SKIN_INFO && SKIN_INFO.current_skin) {
+      body.skin = SKIN_INFO.current_skin;
+    }
+    const r = await api("/api/room/join", body);
     SESSION = { code: r.code, token: r.token, seat: r.seat, mode: "lan" };
     saveSession();
     enterGame(r.state);
@@ -1306,15 +1316,52 @@ function renderSkinButtons(activeId) {
   const box = $("optSkins");
   if (!SKIN_INFO || !SKIN_INFO.skins) return;
   box.innerHTML = "";
+  // ゲーム進行中はスキン変更を禁止
+  const isGameInProgress = STATE && STATE.room && STATE.room.game_active;
   SKIN_INFO.skins.forEach((s) => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "levelbtn" + (s.id === activeId ? " active" : "");
     b.textContent = s.label;
     b.dataset.skin = s.id;
-    b.addEventListener("click", () => selectSkin(s.id));
+    b.disabled = isGameInProgress;
+    if (!isGameInProgress) {
+      b.addEventListener("click", () => selectSkin(s.id));
+    }
     box.appendChild(b);
   });
+  // ゲーム進行中の場合、メッセージを変更
+  const msg = $("optSkinMsg");
+  if (isGameInProgress) {
+    msg.innerHTML = "ゲーム進行中はスキンを変更できません。<br>対戦が終わった後に変更してください。";
+  } else {
+    msg.innerHTML = "カード名・技名・アイテム名の見た目セットを切り替えます。<br>選ぶと<b>次に始める対戦から</b>反映されます（サーバー再起動は不要）。";
+  }
+}
+
+function renderLobbySkinButtons() {
+  const box = $("skinModes");
+  if (!SKIN_INFO || !SKIN_INFO.skins) return;
+  box.innerHTML = "";
+  const currentSkin = SKIN_INFO.current_skin || "arcana";
+  SKIN_INFO.skins.forEach((s) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "modecard" + (s.id === currentSkin ? " active" : "");
+    b.innerHTML = '<div class="modeicon">🎨</div>' +
+      '<div class="modename">' + escapeHtml(s.label) + "</div>";
+    b.dataset.skin = s.id;
+    b.addEventListener("click", () => chooseLobbySkin(s.id));
+    box.appendChild(b);
+  });
+}
+
+/* ロビーで最初にスキンを選ぶ。ここではまだセッションが無いので
+   サーバーには送らず（送るのは部屋作成/参加のとき）、覚えておくだけ。
+   選んだらモード選択（CPU対戦/LAN対戦）へ進む。 */
+function chooseLobbySkin(skinId) {
+  if (SKIN_INFO) SKIN_INFO.current_skin = skinId;
+  showLobby("lb-mode");
 }
 
 async function selectSkin(skinId) {
@@ -1425,6 +1472,8 @@ $("joinCode").addEventListener("keydown", (e) => {
 });
 document.querySelectorAll("[data-back]").forEach((b) => {
   b.addEventListener("click", () => {
+    const backTo = b.dataset.back;
+
     // 作りかけのLAN部屋から抜けるだけ。中断した対戦（RESUMABLE）はそのまま残す。
     // サーバー側の部屋も閉じておかないと、一覧にゴミが残り続ける。
     if (SESSION && SESSION.mode === "lan") {
@@ -1434,7 +1483,7 @@ document.querySelectorAll("[data-back]").forEach((b) => {
       saveSession();
       stopPolling();
     }
-    showLobby(b.dataset.back);
+    showLobby(backTo);
   });
 });
 
@@ -1464,7 +1513,7 @@ initTabs();
 /* 前回の続きがあれば復帰する（F5しても席を失わないように） */
 (async function boot() {
   const s = loadSession();
-  if (!s) { showLobby("lb-mode"); return; }
+  if (!s) { await loadSkinOptions(); showLobby("lb-skin"); return; }
   SESSION = s;
   try {
     const v = await api("/api/room/state?code=" + encodeURIComponent(s.code) +

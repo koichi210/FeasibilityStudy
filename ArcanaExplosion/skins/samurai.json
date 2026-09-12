@@ -226,7 +226,7 @@
     "CQ": { "type": "dispel_buff", "value": 0,
       "text": "義元の陣替え：相手にかかっているバフを1つ消す" },
     "CK": { "type": "divine_army", "value": 0,
-      "text": "豊臣方降臨：ベンチに豊臣方の勇将を3体召喚", "extra": 1 },
+      "text": "豊臣方降臨：デッキに豊臣方の勇将を3体召喚", "extra": 1 },
     "CA": { "type": "peek_reorder_deck", "value": 0,
       "text": "半兵衛の参謀：山札の上から3枚を見て、好きな順番に並べ替える" },
 
@@ -237,7 +237,7 @@
     "SK": { "type": "weapon_exclude", "value": 100,
       "text": "信玄の祈祷：攻撃+100（装備）。使用後、このカードはゲームから除外される" },
     "SA": { "type": "divine_army", "value": 0,
-      "text": "徳川方降臨：ベンチに徳川方の猛者を3体召喚", "extra": 1 }
+      "text": "徳川方降臨：デッキに徳川方の猛者を3体召喚", "extra": 1 }
   },
 
   "balance_overrides": {}

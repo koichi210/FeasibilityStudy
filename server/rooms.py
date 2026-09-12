@@ -62,6 +62,7 @@ class Room:
         self.names: List[Optional[str]] = [host_name, "CPU" if mode == "cpu" else None]
         self.tokens: List[Optional[str]] = [secrets.token_urlsafe(12), None]
         self.last_seen: List[float] = [time.time(), 0.0]
+        self.skins: List[Optional[str]] = [None, None]  # プレイヤーごとのスキン（None = デフォルト）
         self.game: Optional[Game] = None
         self.rev = 0                          # 盤面が変わるたびに増える（画面の更新判定用）
         self.created = time.time()
@@ -71,6 +72,13 @@ class Room:
 
     # ------------------------------------------------------------ 進行
     def start_game(self):
+        # CPU対戦の場合は、敵のスキンをランダムに選ぶ（ゲーム開始の前に設定）
+        if self.mode == "cpu":
+            from engine import skins as skin_store
+            available = skin_store.available_skins()
+            if available:
+                self.skins[1] = random.choice(available)["id"]
+
         self.game = Game(
             names=(self.names[0] or "プレイヤー1", self.names[1] or "プレイヤー2"),
             cpu=(False, self.mode == "cpu"),
@@ -201,11 +209,25 @@ class Room:
                                      if self.mode == "cpu" else None),
                 # CPUの手がまだ残っている＝画面は演出を見せ終えたら続きを取りに来る
                 "cpu_thinking": self.cpu_thinking,
+                "my_skin": self.skins[seat],  # 自分のスキン
             },
             "rev": self.rev,
         }
         if self.game:
             d.update(self.game.view(seat))
+            # スキンに基づいてカード名を置き換え
+            from engine import skins as skin_store
+
+            # 自分のスキンを適用
+            if self.skins[seat]:
+                skin_data = skin_store.load_skin(self.skins[seat])
+                self._replace_card_names_for_player(d, seat, skin_data, is_self=True)
+
+            # 相手のスキンも適用（opponent の敵名を相手のスキンで表示）
+            opponent_seat = 1 - seat  # 0 <-> 1
+            if self.skins[opponent_seat]:
+                skin_data = skin_store.load_skin(self.skins[opponent_seat])
+                self._replace_opponent_card_names(d, skin_data)
         else:
             # まだ相手が来ていない
             d.update({
@@ -214,6 +236,187 @@ class Room:
                 "winner": None, "finish_reason": "",
             })
         return d
+
+    def _replace_card_names_for_player(self, view_data: dict, seat: int, skin_data: dict,
+                                        is_self: bool = True) -> None:
+        """特定プレイヤーのカード名をスキンに基づいて置き換える"""
+        from engine import cards as cards_module
+        import re
+
+        if is_self:
+            player_key = "me"
+            opponent_key = "opponent"
+        else:
+            player_key = "opponent"
+            opponent_key = "me"
+
+        enemy_names = skin_data.get("enemy_names", {})
+        face_enemy_names = skin_data.get("face_enemy_names", {})
+        face_ability_names = skin_data.get("face_ability_names", {})
+        item_number_names = skin_data.get("item_number_names", {})
+
+        def replace_card_name(card: dict, is_player_card: bool) -> None:
+            if not card:
+                return
+            if card.get("kind") == "item":
+                # アイテムの場合
+                code = card.get("code", "")
+                suit = code[0] if code else ""
+                rank_str = code[1:] if len(code) > 1 else ""
+
+                # 絵札（J/Q/K/A）のアイテムの場合
+                if rank_str in ["J", "Q", "K", "A"]:
+                    item_face_names = skin_data.get("item_face_names", {})
+                    if code in item_face_names:
+                        card["name"] = item_face_names[code]
+                else:
+                    # 数字カード（2-10）のアイテムの場合
+                    if rank_str.isdigit():
+                        rank = int(rank_str)
+                    else:
+                        rank = None
+
+                    if rank and suit in item_number_names and isinstance(item_number_names[suit], list):
+                        idx = rank - 2  # ランク2=インデックス0
+                        if 0 <= idx < len(item_number_names[suit]):
+                            card["name"] = item_number_names[suit][idx]
+            elif card.get("kind") == "enemy":
+                # エネミーの場合
+                code = card.get("code", "")
+                suit = code[0] if code else ""
+                rank_str = code[1:] if len(code) > 1 else ""
+
+                # 絵札（J/Q/K/A）の場合
+                if rank_str in ["J", "Q", "K", "A"]:
+                    if code in face_enemy_names:
+                        card["name"] = face_enemy_names[code]
+                    # 技名も置き換え
+                    if card.get("ability") and code in face_ability_names:
+                        card["ability"]["name"] = face_ability_names[code]
+                else:
+                    # 数字カード（2-10）の場合
+                    if rank_str.isdigit():
+                        rank = int(rank_str)
+                    else:
+                        rank = None
+
+                    if rank and suit in enemy_names and isinstance(enemy_names[suit], list):
+                        idx = rank - 2  # ランク2=インデックス0
+                        if 0 <= idx < len(enemy_names[suit]):
+                            card["name"] = enemy_names[suit][idx]
+                # 技名も置き換え
+                if card.get("ability"):
+                    ability_id = card["ability"].get("id", "")
+                    if ability_id in face_ability_names:
+                        card["ability"]["name"] = face_ability_names[ability_id]
+
+        # プレイヤーのカード置き換え
+        if player_key in view_data:
+            if view_data[player_key].get("battle"):
+                replace_card_name(view_data[player_key]["battle"], is_player_card=True)
+            for bench_card in view_data[player_key].get("bench", []):
+                replace_card_name(bench_card, is_player_card=True)
+            for hand_card in view_data[player_key].get("hand", []):
+                replace_card_name(hand_card, is_player_card=True)
+            if is_self:  # 自分の場合のみ、相手の敵手札を見せる（隠れる側は不要）
+                for enemy_hand_card in view_data[player_key].get("enemy_hand", []):
+                    replace_card_name(enemy_hand_card, is_player_card=False)
+
+        # 相手のカード置き換え（opponent の敵だけ）
+        if opponent_key in view_data and not is_self:
+            print(f"[DEBUG] Replacing opponent cards. opponent_key={opponent_key}, is_self={is_self}")
+            if view_data[opponent_key].get("battle"):
+                print(f"[DEBUG] Opponent battle card: {view_data[opponent_key]['battle']}")
+                replace_card_name(view_data[opponent_key]["battle"], is_player_card=False)
+                print(f"[DEBUG] After replacement: {view_data[opponent_key]['battle']}")
+            for bench_card in view_data[opponent_key].get("bench", []):
+                replace_card_name(bench_card, is_player_card=False)
+
+        # ログ内の敵名を置き換え（自分のスキンでのみ置き換え）
+        if is_self and "log" in view_data:
+            import re
+            # ログ内で敵名を置き換えるための逆引き辞書を作成
+            default_to_skin_enemy = {}
+            for suit in ["H", "D", "C", "S"]:
+                if suit in cards_module.ENEMY_NAMES and suit in enemy_names:
+                    default_names = cards_module.ENEMY_NAMES.get(suit, [])
+                    skin_names = enemy_names.get(suit, [])
+                    for i, (default_name, skin_name) in enumerate(zip(default_names, skin_names)):
+                        if default_name != skin_name:
+                            default_to_skin_enemy[default_name] = skin_name
+
+            for entry in view_data["log"]:
+                if "text" in entry:
+                    text = entry["text"]
+                    # ログテキスト内でデフォルト敵名をスキン適用後の名前に置き換える
+                    for default_name, skin_name in default_to_skin_enemy.items():
+                        # 「♠J の こうげき」など、敵名の前後に記号や句読点が来る場合を考慮
+                        text = re.sub(r'\b' + re.escape(default_name) + r'\b', skin_name, text)
+                    entry["text"] = text
+
+    def _replace_opponent_card_names(self, view_data: dict, skin_data: dict) -> None:
+        """敵（opponent）のカード名をスキンに基づいて置き換える（敵視点）"""
+        from engine import cards as cards_module
+        import re
+
+        enemy_names = skin_data.get("enemy_names", {})
+        face_enemy_names = skin_data.get("face_enemy_names", {})
+        face_ability_names = skin_data.get("face_ability_names", {})
+        item_number_names = skin_data.get("item_number_names", {})
+
+        def replace_card_name(card: dict) -> None:
+            if not card:
+                return
+            if card.get("kind") == "item":
+                # アイテムの場合
+                code = card.get("code", "")
+                suit = code[0] if code else ""
+                rank_str = code[1:] if len(code) > 1 else ""
+
+                if rank_str in ["J", "Q", "K", "A"]:
+                    item_face_names = skin_data.get("item_face_names", {})
+                    if code in item_face_names:
+                        card["name"] = item_face_names[code]
+                else:
+                    if rank_str.isdigit():
+                        rank = int(rank_str)
+                    else:
+                        rank = None
+                    if rank and suit in item_number_names and isinstance(item_number_names[suit], list):
+                        idx = rank - 2
+                        if 0 <= idx < len(item_number_names[suit]):
+                            card["name"] = item_number_names[suit][idx]
+            elif card.get("kind") == "enemy":
+                # エネミーの場合
+                code = card.get("code", "")
+                suit = code[0] if code else ""
+                rank_str = code[1:] if len(code) > 1 else ""
+
+                if rank_str in ["J", "Q", "K", "A"]:
+                    if code in face_enemy_names:
+                        card["name"] = face_enemy_names[code]
+                    if card.get("ability") and code in face_ability_names:
+                        card["ability"]["name"] = face_ability_names[code]
+                else:
+                    if rank_str.isdigit():
+                        rank = int(rank_str)
+                    else:
+                        rank = None
+                    if rank and suit in enemy_names and isinstance(enemy_names[suit], list):
+                        idx = rank - 2
+                        if 0 <= idx < len(enemy_names[suit]):
+                            card["name"] = enemy_names[suit][idx]
+                if card.get("ability"):
+                    ability_id = card["ability"].get("id", "")
+                    if ability_id in face_ability_names:
+                        card["ability"]["name"] = face_ability_names[ability_id]
+
+        # 敵（opponent）のカード置き換え
+        if "opponent" in view_data:
+            if view_data["opponent"].get("battle"):
+                replace_card_name(view_data["opponent"]["battle"])
+            for bench_card in view_data["opponent"].get("bench", []):
+                replace_card_name(bench_card)
 
     def summary(self) -> dict:
         return {

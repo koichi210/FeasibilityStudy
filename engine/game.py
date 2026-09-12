@@ -18,13 +18,15 @@ from typing import Dict, List, Optional
 
 from .cards import (BALANCE, Card, DEMON_ARMY_KEYS, GOD_ARMY_KEYS,
                     build_item_deck, build_enemy_deck, make_demon_enemy,
-                    make_god_enemy)
+                    make_god_enemy, apply_skin)
+from .skins import current_skin_id
 
 B = BALANCE
 AV = B["ability_values"]
 DEMON = B["demon_lord"]
 DIVINE = B["divine_army"]
 DEMONA = B["demon_army"]
+TF = B["third_force"]
 
 # 場に置いておくだけで味方全体を支え続けるカード。
 # 置きっぱなしで恒久的な効果になってしまうのを防ぐため、
@@ -39,9 +41,20 @@ BENCH_LIMITED_ABILITIES = {"H_Q_guard", "C_K_command", "H_J_regen"}
 #   heal   … 癒す（緑）
 #   buff   … 強化・小細工（青）※ここに無いものは buff 扱い
 ITEM_TONE = {
-    "burn": "attack", "poison": "attack", "stun": "attack",
-    "forbidden": "attack", "sacrifice": "attack",
+    "burn": "attack", "poison": "attack", "stun": "attack", "atk_down": "attack",
+    "def_down": "attack", "forbidden": "attack", "sacrifice": "attack",
+    "atk_down_single": "attack", "atk_down_mutual": "attack",
     "heal": "heal", "full_heal": "heal", "trainer_heal": "heal", "revive": "heal",
+    "heal_cure_status": "heal", "heal_self_lock": "heal", "revive_field_fixed_hp": "heal",
+    "shield_flat": "buff", "shield_half": "buff",
+    "atk_buff_turns": "buff", "def_buff_turns": "buff",
+    "weapon_and_atk_down": "buff", "weapon_and_armor": "buff",
+    "peek_hand": "buff", "next_move_power": "buff", "peek_reorder_deck": "buff",
+    "return_used_item": "buff", "dispel_buff": "buff",
+    "weapon_self_cost": "buff", "weapon_armor_self_cost": "buff",
+    "weapon_self_defdown": "buff", "armor_self_penalty": "buff",
+    "next_move_power_self_cost": "buff", "extra_item_use": "buff",
+    "weapon_self_lock": "buff", "weapon_exclude": "buff",
 }
 
 # ゲームオプション。新しいゲームを始めるときに指定する。
@@ -53,7 +66,7 @@ DEFAULT_OPTIONS = {
 }
 
 OPTION_LABELS = {
-    "enemy_abilities": "エネミーの技",
+    "enemy_abilities": "キャラクターの技",
     "demon_lord": "魔王（♠A）",
 }
 
@@ -95,6 +108,18 @@ class Enemy:
     atk_bonus: int = 0
     def_bonus: int = 0
     fragile_atk: int = 0      # 伝説の剣：1回攻撃すると失われる分
+    atk_debuff: int = 0       # atk_down効果でどれだけ攻撃力を下げたか（解除時に戻す用）
+    atk_debuff_turns: int = 0  # atk_down効果の残りターン数（0＝かかっていない）
+    def_debuff: int = 0       # def_down効果でどれだけ防御力を下げたか（解除時に戻す用）
+    def_debuff_turns: int = 0  # def_down効果の残りターン数（0＝かかっていない）
+    atk_buff: int = 0         # atk_buff_turns効果でどれだけ攻撃力を上げたか（解除時に戻す用）
+    atk_buff_turns: int = 0   # atk_buff_turns効果の残りターン数（0＝かかっていない）
+    def_buff: int = 0         # def_buff_turns効果でどれだけ防御力を上げたか（解除時に戻す用）
+    def_buff_turns: int = 0   # def_buff_turns効果の残りターン数（0＝かかっていない）
+    shield_flat: int = 0      # 次に受けるダメージをこの分だけ軽減する（1回消費で0に戻る）
+    shield_half: bool = False  # 次に受けるダメージを半減する（1回消費でFalseに戻る）
+    next_attack_bonus: int = 0  # 次の自分の攻撃力に加算する一時修正値（負の値＝次の攻撃だけ弱める）
+    attack_locked: bool = False  # 次の自分のターン、攻撃だけできない（交代は可）
     equipment: List[str] = field(default_factory=list)
     revived: bool = False     # 不死鳥を使ったか
     is_demon: bool = False
@@ -115,7 +140,7 @@ class Enemy:
 
     @property
     def can_attack(self) -> bool:
-        return self.fatigue <= 0
+        return self.fatigue <= 0 and not self.attack_locked
 
     def to_dict(self) -> dict:
         d = self.card.to_dict()
@@ -132,6 +157,18 @@ class Enemy:
             "fatigue": self.fatigue,
             "poison": self.poison,
             "curse": self.curse,
+            "atk_debuff": self.atk_debuff,
+            "atk_debuff_turns": self.atk_debuff_turns,
+            "def_debuff": self.def_debuff,
+            "def_debuff_turns": self.def_debuff_turns,
+            "atk_buff": self.atk_buff,
+            "atk_buff_turns": self.atk_buff_turns,
+            "def_buff": self.def_buff,
+            "def_buff_turns": self.def_buff_turns,
+            "shield_flat": self.shield_flat,
+            "shield_half": self.shield_half,
+            "next_attack_bonus": self.next_attack_bonus,
+            "attack_locked": self.attack_locked,
             "equipment": list(self.equipment),
             "is_demon": self.is_demon,
             "demon_turns": self.demon_turns,
@@ -180,6 +217,26 @@ class Player:
 
 
 # ==========================================================================
+# 三つ巴：第三勢力（乱入する中立モンスター）
+# ==========================================================================
+@dataclass
+class ThirdForce:
+    """どちらの味方でもない、途中から乱入してくる第三勢力。
+
+    2〜10の数字カードのみで組んだ専用の山札（`deck`）を持つ。
+    場に出るのは常に1体だけで、倒されたら山札から次の1体が控えから出てくる。
+    山札を出し切って最後の1体まで倒し切ったら、とどめを刺した側の討伐勝利。
+    専用ターンは持たず、毎ターン終了時に自動でどちらか一方を1回だけ攻撃する
+    （簡易ギミックとして実装。疲労・強制退場などの通常ルールは適用しない）。
+    """
+    deck: List[Card] = field(default_factory=list)
+    discard: List[Card] = field(default_factory=list)
+    enemy: Optional[Enemy] = None
+    active: bool = False      # 乱入イベントが発生済みか
+    defeated: bool = False    # 山札を出し切って討伐が完了したか
+
+
+# ==========================================================================
 # ゲーム本体
 # ==========================================================================
 class Game:
@@ -224,6 +281,10 @@ class Game:
         ]
         self.item_deck: List[Card] = []
         self.item_discard: List[Card] = []
+        # 生贄の儀式（weapon_exclude系）で使用されたカードなど、
+        # 二度と山札に戻らない「ゲームから除外」されたアイテムの置き場
+        self.item_removed: List[Card] = []
+        self.third_force = ThirdForce()
 
     # ---------------------------------------------------------------- setup
     def start(self):
@@ -232,6 +293,18 @@ class Game:
             self.rng.shuffle(p.deck)
         self.item_deck = build_item_deck()
         self.rng.shuffle(self.item_deck)
+
+        # 三つ巴：第三勢力の専用山札を組む（全スキンの魔神軍6体ずつ = 30体）
+        # スキン一覧：arcana, tensura, madomagi, rezero, samurai
+        cards = []
+        current = current_skin_id()
+        for skin_id in ["arcana", "tensura", "madomagi", "rezero", "samurai"]:
+            apply_skin(skin_id)
+            for key in DEMON_ARMY_KEYS:
+                cards.append(make_demon_enemy(key))
+        apply_skin(current)  # 元のスキンに戻す
+        self.rng.shuffle(cards)
+        self.third_force.deck = cards
 
         for p in self.players:
             for _ in range(B["initial_hand_size"]):
@@ -343,6 +416,27 @@ class Game:
         m.is_god_summon = True
         return m
 
+    def _spawn_third_force_enemy(self, card: Card) -> Enemy:
+        """第三勢力のエネミーを1体作る。J/Q/Kの技は使わない（そもそも2〜10しか入っていない）。"""
+        return Enemy(card=card, uid=self._next_uid(),
+                     hp=TF["hp"], hp_max=TF["hp"],
+                     base_atk=card.atk, base_def=card.dfn,
+                     atk_bonus=TF["atk_bonus"], def_bonus=TF["def_bonus"],
+                     ability_enabled=False)
+
+    def _activate_third_force(self):
+        """第三勢力の乱入イベントを発生させる（1ゲームに1度だけ）。"""
+        tf = self.third_force
+        tf.active = True
+        if not tf.deck:
+            return
+        card = tf.deck.pop()
+        tf.enemy = self._spawn_third_force_enemy(card)
+        self._say("🌩️ 第三勢力が乱入してきた！ {} が両陣営に襲いかかる！".format(self._nm(tf.enemy)))
+        # target は付けない（登場の合図であって被弾ではないため、爪痕の演出は出さない）
+        self._fx("enter", title="🌩️ 第三勢力、乱入！",
+                 cry="どちらも滅ぼしてくれる…！", tone="attack")
+
     def _spawn_demon(self, p: Player, key: str) -> Enemy:
         """魔神軍降臨で、10/9/8の上位互換エネミーを1体作る。
         技は同じスートのJ/Q/Kから借用（既存ロジックがそのまま効く）。HPだけ通常と異なる。"""
@@ -402,7 +496,7 @@ class Game:
                         self._say_hidden(
                             p,
                             "🆕 {}：ベンチに {} が登場".format(p.name, self._nm(p.bench[i])),
-                            "🆕 {}：ベンチにエネミーが1体登場".format(p.name))
+                            "🆕 {}：ベンチにキャラクターが1体登場".format(p.name))
                     self._on_enter(p, p.bench[i], silent)
             return
 
@@ -449,9 +543,9 @@ class Game:
             # 手札の中身は相手に伏せる（引いた事実だけ伝える）
             self._say_hidden(
                 p,
-                "🃏 {} が {} をエネミー手札に加えた".format(
+                "🃏 {} が {} をキャラクター手札に加えた".format(
                     p.name, "{}{}".format(card.label, card.name)),
-                "🃏 {} がエネミーを1枚引いた".format(p.name))
+                "🃏 {} がキャラクターを1枚引いた".format(p.name))
         return card
 
     def _nm(self, m: Enemy) -> str:
@@ -494,6 +588,10 @@ class Game:
         p.attacked = False
         self._say("──── ターン{}：{} ────".format(self.turn, p.name))
 
+        # 三つ巴：決まったターン数に達したら、第三勢力が乱入する（1ゲームに1度だけ）
+        if not self.third_force.active and self.turn >= TF["trigger_turn"]:
+            self._activate_third_force()
+
         # 疲労回復
         for m in p.field_enemies():
             if m.fatigue > 0:
@@ -508,13 +606,49 @@ class Game:
             if m.hp > 0 and m.curse > 0:
                 self._damage_enemy(p, m, m.curse, source="呪い", by_opponent=False)
 
+        # atk_down効果（スキン独自効果）のカウントダウン。切れたら元の攻撃力に戻す。
+        for m in p.field_enemies():
+            if m.atk_debuff_turns > 0:
+                m.atk_debuff_turns -= 1
+                if m.atk_debuff_turns <= 0 and m.atk_debuff:
+                    m.atk_bonus += m.atk_debuff
+                    self._say("📈 {} の攻撃力ダウンが切れた".format(self._nm(m)))
+                    m.atk_debuff = 0
+
+        # def_down効果（スキン独自効果）のカウントダウン。切れたら元の防御力に戻す。
+        for m in p.field_enemies():
+            if m.def_debuff_turns > 0:
+                m.def_debuff_turns -= 1
+                if m.def_debuff_turns <= 0 and m.def_debuff:
+                    m.def_bonus += m.def_debuff
+                    self._say("🛡️ {} の防御力ダウンが切れた".format(self._nm(m)))
+                    m.def_debuff = 0
+
+        # atk_buff_turns効果（スキン独自効果）のカウントダウン。切れたら上げた分を戻す。
+        for m in p.field_enemies():
+            if m.atk_buff_turns > 0:
+                m.atk_buff_turns -= 1
+                if m.atk_buff_turns <= 0 and m.atk_buff:
+                    m.atk_bonus -= m.atk_buff
+                    self._say("📉 {} の攻撃力アップが切れた".format(self._nm(m)))
+                    m.atk_buff = 0
+
+        # def_buff_turns効果（スキン独自効果）のカウントダウン。切れたら上げた分を戻す。
+        for m in p.field_enemies():
+            if m.def_buff_turns > 0:
+                m.def_buff_turns -= 1
+                if m.def_buff_turns <= 0 and m.def_buff:
+                    m.def_bonus -= m.def_buff
+                    self._say("📉 {} の防御力アップが切れた".format(self._nm(m)))
+                    m.def_buff = 0
+
         # ターン開始時の技
         for m in p.field_enemies():
             if m.ability_id == "H_J_regen":
                 v = AV["H_J_regen"]
                 for t in p.field_enemies():
                     t.hp = min(t.hp_max, t.hp + v)
-                self._say("💚 ヒーリングナイト：{} の場のエネミーが{}回復".format(p.name, v))
+                self._say("💚 ヒーリングナイト：{} の場のキャラクターが{}回復".format(p.name, v))
                 break
 
         # 魔王のカウントダウン：バトル場にいる間だけ減る。ベンチにいる間は消滅しない
@@ -534,7 +668,7 @@ class Game:
                     self._say_hidden(
                         p,
                         "⌛ {} はベンチにいられる期限が切れて退場".format(self._nm(m)),
-                        "⌛ {} のベンチのエネミーが1体、期限切れで退場".format(p.name))
+                        "⌛ {} のベンチのキャラクターが1体、期限切れで退場".format(p.name))
                     self._remove(p, m, to_discard=True)
 
         if self.winner is None:
@@ -548,6 +682,17 @@ class Game:
             return
         # 呪縛は「次の1ターン」だけ。縛られた本人のターンが終わったら解ける。
         self.players[self.current].stunned = False
+        # attack_locked（毒の刃・破滅の呪符などの代償）も同じく1ターンだけの効果。
+        # 縛られた本人のターンが終わったら解ける。
+        if self.players[self.current].battle:
+            self.players[self.current].battle.attack_locked = False
+
+        # 三つ巴：第三勢力が場にいれば、ターン終了時に自動で1回だけ襲ってくる
+        if self.third_force.enemy is not None:
+            self._third_force_attack()
+            if self.winner is not None:
+                return
+
         self.turn += 1
         self.current = 1 - self.current
         if self.turn > self.MAX_TURNS:
@@ -591,7 +736,13 @@ class Game:
         if p.battle and not p.attacked and p.battle.can_attack and not p.stunned:
             if not (p.battle.is_demon and o.battle and o.battle.is_demon):
                 target = "相手トレーナー（直接攻撃）" if o.battle is None else self._nm(o.battle)
-                acts.append({"type": "attack", "label": "⚔️ 攻撃 → {}".format(target)})
+                acts.append({"type": "attack", "target": "opponent",
+                             "label": "⚔️ 攻撃 → {}".format(target)})
+            # 三つ巴：第三勢力が場にいれば、そちらを攻める選択肢も出す
+            if self.third_force.enemy is not None:
+                acts.append({"type": "attack", "target": "third_force",
+                             "label": "🌩️ 攻撃 → 第三勢力 {}".format(
+                                 self._nm(self.third_force.enemy))})
 
         # エネミー配置（手札にいるエネミーを、空いている場に出す）
         for i, c in enumerate(p.enemy_hand):
@@ -655,6 +806,16 @@ class Game:
                     return "after_swap"
         return None
 
+    # 「攻撃力/防御力を自分に付与する系」の新type。神軍降臨で召喚された上位互換
+    # エネミーは自己バフ全般が使えない、という既存ルール（下のweapon/armor系と同じ）
+    # の一貫性を保つため、こちらも p.battle.is_god_summon なら使えない扱いにする。
+    SELF_BUFF_TYPES = (
+        "weapon_and_atk_down", "weapon_and_armor", "weapon_self_cost",
+        "weapon_armor_self_cost", "weapon_self_defdown", "weapon_self_lock",
+        "weapon_exclude", "atk_buff_turns", "def_buff_turns", "next_move_power",
+        "next_move_power_self_cost", "armor_self_penalty", "atk_down_mutual",
+    )
+
     def _item_usable(self, p: Player, o: Player, c: Card) -> bool:
         t = c.effect.type
         if t in ("heal", "full_heal", "weapon", "armor", "weapon_cursed",
@@ -676,12 +837,14 @@ class Game:
             return p.trainer_hp <= DIVINE["trigger_hp"]
         if t == "demon_army":
             return True  # 魔神軍降臨：いつでも使える
-        if t in ("burn", "poison", "forbidden"):
+        if t in ("burn", "poison", "atk_down", "def_down", "forbidden"):
             return o.battle is not None
+        if t == "summon_god":
+            return any(m is None for m in p.bench)
         if t == "trainer_heal":
             return p.trainer_hp < p.trainer_hp_max
         if t == "free_swap":
-            return any(m for m in p.bench)
+            return not p.stunned and any(m for m in p.bench)
         if t == "deploy":
             return any(m is None for m in p.bench)
         if t == "draw_items":
@@ -690,22 +853,59 @@ class Game:
             # 戻す先はエネミー手札なので、ベンチの空きではなく手札の空きを見る
             return (any(x.kind == "enemy" for x in p.discard)
                     and len(p.enemy_hand) < B["enemy_hand_size_max"])
+        # ---------------------------------------------------------------
+        # ここから下は、アルカナスキンの item_effect_overrides で新しく
+        # 使われている効果タイプ（2026-09-07 追加）。
+        # ---------------------------------------------------------------
+        if t in ("heal_cure_status", "shield_flat", "shield_half", "heal_self_lock"):
+            return p.battle is not None
+        if t in self.SELF_BUFF_TYPES:
+            if p.battle is None or p.battle.is_god_summon:
+                return False
+            if t in ("weapon_and_atk_down", "atk_down_mutual"):
+                return o.battle is not None
+            return True
+        if t == "revive_field_fixed_hp":
+            return (any(x.kind == "enemy" for x in p.discard)
+                    and any(m is None for m in p.bench))
+        if t == "atk_down_single":
+            return o.battle is not None
+        if t == "peek_hand":
+            return len(o.enemy_hand) > 0
+        if t == "peek_reorder_deck":
+            return len(p.deck) > 0
+        if t == "return_used_item":
+            return len(self.item_discard) > 0 and len(p.hand) < B["hand_size_max"]
+        if t == "dispel_buff":
+            return o.battle is not None and (
+                o.battle.atk_buff_turns > 0 or o.battle.def_buff_turns > 0)
+        if t == "extra_item_use":
+            return p.battle is not None and not p.battle.is_god_summon
         return True
 
     # -------------------------------------------------- めくって選ぶ（アイテム）
     def _begin_choice(self, p: Player, kind: str, title: str,
-                      cards: List[Card], picks: int, to: str):
+                      cards: List[Card], picks: int, to: str, hp_fixed: int = None):
         """候補カードを見せて、その中から選んでもらう状態に入る。
 
         cards はすでに山札／捨て札から取り出してある前提。
         選ばれなかったぶんは `_finish_choice` が元へ戻す。
         CPU は待たせても仕方がないので、その場で自動的に選ぶ。
+
+        to の種類：
+          "enemy_hand"     … 選んだ1枚をキャラクター手札へ（既存）
+          "hand"           … 選んだ1枚をアイテム手札へ（既存）
+          "bench_fixed_hp" … 選んだ1枚を、HP=hp_fixed でベンチの空き枠に直接登場させる
+                             （蘇生の秘薬）。残りは捨て札に戻す
+          "deck_top"       … 選んだ1枚を山札の一番上に、残りは元の相対順序のまま
+                             その下に戻す（絶対障壁）
         """
         if not cards:
             return
         picks = min(picks, len(cards))
         self.pending_choice = {"seat": p.idx, "kind": kind, "title": title,
-                               "cards": list(cards), "picks": picks, "to": to}
+                               "cards": list(cards), "picks": picks, "to": to,
+                               "hp_fixed": hp_fixed}
         if p.is_cpu:
             while self.pending_choice:
                 self._do_pick({"index": self._cpu_best_pick()})
@@ -738,7 +938,33 @@ class Game:
             self._say_hidden(
                 p,
                 "🃏 {} が {}{} を選んだ".format(p.name, card.label, card.name),
-                "🃏 {} がエネミーを1枚選んだ".format(p.name))
+                "🃏 {} がキャラクターを1枚選んだ".format(p.name))
+        elif ch["to"] == "bench_fixed_hp":
+            # 蘇生の秘薬：手札にではなく、ベンチの空き枠に固定HPで直接復活させる
+            empty = next((j for j, m in enumerate(p.bench) if m is None), None)
+            if empty is None:
+                # ベンチが埋まってしまっていたら（理論上は _item_usable で防いでいるはず）
+                # 捨て札に戻す
+                p.discard.append(card)
+                self._say("🚫 蘇生の秘薬：ベンチに空きがなく復活できなかった")
+            else:
+                m = self._spawn(p, card)
+                m.hp = m.hp_max = ch["hp_fixed"]
+                p.bench[empty] = m
+                self._say_hidden(
+                    p,
+                    "✨ {} が {}{} をHP{}でベンチに復活させた".format(
+                        p.name, card.label, card.name, ch["hp_fixed"]),
+                    "✨ {} のベンチにキャラクターが1体復活した".format(p.name))
+                self._on_enter(p, m)
+        elif ch["to"] == "deck_top":
+            # 絶対障壁：選んだ1枚は最終的に _finish_choice でまとめて山札の一番上に置く
+            # （残りの並び順を保つため、選んだカードだけを先に確保しておく）
+            ch["chosen"] = card
+            self._say_hidden(
+                p,
+                "🎴 {} が {}{} を山札の一番上に置いた".format(p.name, card.label, card.name),
+                "🎴 {} が山札の並びを入れ替えた".format(p.name))
         else:                                   # アイテム手札
             p.hand.append(card)
             self._say_hidden(
@@ -757,12 +983,24 @@ class Game:
         self.pending_choice = None
         if not ch:
             return
+        p = self.players[ch["seat"]]
         rest = ch["cards"]
+        if ch["to"] == "deck_top":
+            # 選んだ1枚（ch["chosen"]）を一番上に、残り（rest）は元の相対順序のまま
+            # その下に戻す。deck は末尾が「山の一番上」（_draw_enemy が pop() する側）。
+            chosen = ch.get("chosen")
+            if chosen is not None:
+                p.deck.extend(reversed(rest))       # 残りを、上→下の順を保ったまま積む
+                p.deck.append(chosen)               # 選んだ1枚を最後に積んで一番上にする
+            elif rest:
+                p.deck.extend(reversed(rest))
+            return
         if not rest:
             return
-        p = self.players[ch["seat"]]
-        if ch["kind"] == "revive":
+        if ch["kind"] == "revive" or ch["to"] == "bench_fixed_hp":
             p.discard.extend(rest)              # 捨て札はそのまま戻す
+        elif ch["kind"] == "return_used_item":
+            self.item_discard.extend(rest)      # 気付け薬：選ばれなかった分はそのまま捨て札に残す
         elif ch["to"] == "enemy_hand":
             p.deck.extend(rest)                 # 山札へ戻して混ぜる
             self.rng.shuffle(p.deck)
@@ -815,9 +1053,14 @@ class Game:
                 return False
             if not (p.battle and not p.attacked and p.battle.can_attack):
                 return False
-            if p.battle.is_demon and o.battle and o.battle.is_demon:
-                return False
-            self._do_attack(p, o)
+            if action.get("target") == "third_force":
+                if self.third_force.enemy is None:
+                    return False
+                self._do_attack_third_force(p)
+            else:
+                if p.battle.is_demon and o.battle and o.battle.is_demon:
+                    return False
+                self._do_attack(p, o)
         elif t == "swap":
             i = action.get("bench", -1)
             if p.stunned:
@@ -848,7 +1091,7 @@ class Game:
                 self._say_hidden(
                     p,
                     "🆕 {}：ベンチに {} が登場".format(p.name, self._nm(p.bench[slot])),
-                    "🆕 {}：ベンチにエネミーを1体配置".format(p.name))
+                    "🆕 {}：ベンチにキャラクターを1体配置".format(p.name))
                 self._on_enter(p, p.bench[slot])
             else:
                 return False
@@ -874,7 +1117,7 @@ class Game:
 
     # ================================================================== 戦闘
     def _effective_atk(self, p: Player, m: Enemy) -> int:
-        v = m.base_atk + m.atk_bonus
+        v = m.base_atk + m.atk_bonus + m.next_attack_bonus
         if p.has_bench_ability("C_K_command"):
             v += AV["C_K_command"]
         return v
@@ -950,6 +1193,14 @@ class Game:
         if p.battle is not a:  # 反動で自滅した
             return
 
+        self._post_attack_upkeep(p, a, aid)
+
+    def _post_attack_upkeep(self, p: Player, a: Enemy, aid: Optional[str]):
+        """攻撃したあとの後始末（魔王のカウント・伝説の剣・疲労・強制退場）。
+
+        通常の対戦相手への攻撃（`_do_attack`）と第三勢力への攻撃
+        （`_do_attack_third_force`）の両方から呼ばれる共通処理。
+        """
         # 魔王は攻撃してもカウントが進む。
         # 「攻撃 → ベンチへ退避」を繰り返すとターン開始時のカウントを踏まず、
         # 実質いつまでも居座れてしまう抜け穴があったため。
@@ -968,6 +1219,10 @@ class Game:
                 a.equipment.remove("伝説の剣")
             self._say("💔 伝説の剣が砕け散った")
 
+        # 次の攻撃だけの一時修正値（技の威力アップ／相手からの弱体化）は、
+        # 1回攻撃したらリセットする
+        a.next_attack_bonus = 0
+
         # 疲労と強制退場
         a.attacks_used += 1
         if aid == "D_A_onehit":
@@ -984,10 +1239,137 @@ class Game:
             self._say("🚪 {} は{}回攻撃したので強制退場".format(self._nm(a), a.attacks_used))
             self._remove(p, a, to_discard=True)
 
+    # ---------------------------------------------------- 三つ巴：第三勢力戦
+    def _do_attack_third_force(self, p: Player):
+        """自分のバトル場のエネミーで、第三勢力を攻撃する。
+
+        トレーナー絡みの技（破壊王・ポイズンクイーンなど）は第三勢力には
+        効果が薄い（トレーナーもベンチも持たない相手）ため対象外にしてある。
+        無謀の型・ピアススピアなど、単純にダメージ計算へ絡む技だけ効かせる。
+        """
+        a = p.battle
+        p.attacked = True
+        tf = self.third_force
+        d = tf.enemy
+        atk = self._effective_atk(p, a)
+        aid = a.ability_id
+        cry = "いけっ、{}！".format(a.card.name if not a.is_demon else "魔王")
+        self._fx("attack", attacker=a, target=d,
+                 title="⚔️ {} の こうげき".format(self._nm(a)), cry=cry, tone="attack")
+        self._say("🗣️ {}「{}」".format(p.name, cry))
+
+        dfn = d.base_def + d.def_bonus
+        if aid == "D_Q_pierce":
+            dfn = int(dfn * AV["D_Q_pierce_rate"])
+            self._say("🗡️ ピアススピア：第三勢力の防御を{}%として計算".format(
+                int(AV["D_Q_pierce_rate"] * 100)))
+        if aid == "S_J_reckless":
+            atk += AV["S_J_reckless_bonus"]
+        dmg = max(B["min_damage"], atk - dfn)
+        self._say("⚔️ {} の {}（攻{}）→ 第三勢力 {}（防{}）に {}ダメージ".format(
+            p.name, self._nm(a), atk, self._nm(d), dfn, dmg))
+        self._damage_third_force(p, dmg)
+
+        # 反動ダメージ
+        if aid == "S_J_reckless":
+            self._damage_enemy(p, a, AV["S_J_reckless_recoil"], source="反動", by_opponent=False)
+        if aid == "S_K_tyrant":
+            self._damage_enemy(p, a, AV["S_K_tyrant_recoil"], source="暴君の代償", by_opponent=False)
+
+        if p.battle is not a:  # 反動で自滅した
+            return
+        self._post_attack_upkeep(p, a, aid)
+
+    def _damage_third_force(self, p: Player, dmg: int):
+        """第三勢力にダメージを与える。倒したら山札から次の1体が倒したプレイヤーのベンチに配置される。
+
+        山札を出し切って最後の1体まで倒し切ったら、とどめを刺した p の討伐勝利。
+        """
+        tf = self.third_force
+        m = tf.enemy
+        if m is None or dmg <= 0:
+            return
+        m.hp -= dmg
+        if m.hp > 0:
+            return
+        self._say("☠️ 第三勢力の {} が倒れた！".format(self._nm(m)))
+        tf.discard.append(m.card)
+        tf.enemy = None
+        if tf.deck:
+            card = tf.deck.pop()
+            e = self._spawn_third_force_enemy(card)
+            # ベンチに空きがあるか確認して配置
+            placed = False
+            for i in range(len(p.bench)):
+                if p.bench[i] is None:
+                    p.bench[i] = e
+                    self._say("🎖️ {} が {} のベンチスロット {} に配置された！（残り{}体）".format(
+                        self._nm(e), p.name, i + 1, len(tf.deck)))
+                    placed = True
+                    break
+            if not placed:
+                # ベンチが満杯なら手札に追加
+                p.enemy_hand.append(e)
+                self._say("📥 {} が {} のキャラクター手札に追加された！（残り{}体）".format(
+                    self._nm(e), p.name, len(tf.deck)))
+        else:
+            tf.defeated = True
+            self.winner = p.idx
+            self.finish_reason = "第三勢力を討伐した"
+            self._say("🏆 {} が第三勢力を討伐した！{} の勝ち！".format(p.name, p.name))
+
+    def _third_force_attack(self):
+        """第三勢力の自動行動。ターン終了時に、どちらか一方を1回だけ襲う。
+
+        専用ターンは持たないので、疲労や強制退場のような通常ルールは適用しない
+        （簡易ギミックとしての実装）。
+        """
+        tf = self.third_force
+        m = tf.enemy
+        if m is None:
+            return
+        seat = self.rng.randrange(2)
+        target = self.players[seat]
+        atk = m.base_atk + m.atk_bonus
+        self._fx("attack", attacker=m, target=target.battle,
+                 title="🌩️ 第三勢力の 強襲", cry="邪魔者は消える！", tone="attack")
+        self._say("🌩️ 第三勢力が {} を強襲！".format(target.name))
+        if target.battle is None:
+            target.trainer_hp -= atk
+            self._say("💥 第三勢力の攻撃が直撃！{} のトレーナーに{}ダメージ".format(
+                target.name, atk))
+        else:
+            d = target.battle
+            dfn = self._effective_def(target, d)
+            dmg = max(B["min_damage"], atk - dfn)
+            self._say("⚔️ 第三勢力の攻撃（攻{}）→ {} の {}（防{}）に {}ダメージ".format(
+                atk, target.name, self._nm(d), dfn, dmg))
+            self._damage_enemy(target, d, dmg, source="第三勢力", by_opponent=True)
+        self._check_end()
+
     # ------------------------------------------------------ ダメージ／退場
     def _damage_enemy(self, owner: Player, m: Enemy, dmg: int,
                         source: str = "", by_opponent: bool = True):
         if dmg <= 0 or m.hp <= 0:
+            return
+        # シールド系（応急処置・白銀の秘薬など）の消費処理。
+        # flat軽減を先に適用し、残りを半減する（両方セットされていた場合の順序）。
+        if m.shield_flat > 0:
+            reduced = min(m.shield_flat, dmg)
+            dmg -= reduced
+            m.shield_flat = 0
+            self._say_visible(
+                owner, m,
+                "🛡️ {} がシールドで{}ダメージ軽減".format(self._nm(m), reduced),
+                "🛡️ {} のベンチのキャラクターがシールドでダメージ軽減".format(owner.name))
+        if m.shield_half:
+            dmg = dmg // 2
+            m.shield_half = False
+            self._say_visible(
+                owner, m,
+                "🛡️ {} がシールドでダメージ半減".format(self._nm(m)),
+                "🛡️ {} のベンチのキャラクターがシールドでダメージ半減".format(owner.name))
+        if dmg <= 0:
             return
         m.hp -= dmg
         if source in ("毒", "呪い"):
@@ -995,7 +1377,7 @@ class Game:
                 owner, m,
                 "🩸 {} の {} が{}の継続ダメージで{}ダメージ".format(
                     owner.name, self._nm(m), source, dmg),
-                "🩸 {} のベンチのエネミーが{}の継続ダメージで{}ダメージ".format(
+                "🩸 {} のベンチのキャラクターが{}の継続ダメージで{}ダメージ".format(
                     owner.name, source, dmg))
         if m.hp <= 0:
             self._defeat(owner, m, by_opponent)
@@ -1025,7 +1407,7 @@ class Game:
         self._say_visible(
             owner, m,
             "☠️ {} の {} が倒れた".format(owner.name, self._nm(m)),
-            "☠️ {} のベンチのエネミーが1体倒れた".format(owner.name))
+            "☠️ {} のベンチのキャラクターが1体倒れた".format(owner.name))
         # 撃破ダメージは「倒れた」の直後に出す。
         # 先に _remove すると、そこから出る繰り上げの案内が間に割り込んでしまう。
         if by_opponent:
@@ -1096,6 +1478,25 @@ class Game:
         elif t == "poison":
             o.battle.poison = max(o.battle.poison, v)
             self._say("☠️ {} が毒状態に（毎ターン{}）".format(self._nm(o.battle), v))
+        elif t == "atk_down":
+            # スキン独自効果（例：転スラの「暴食者」）。相手のバトル場の攻撃力を
+            # 一定ターンの間だけ下げる。二重掛けはターン数を上書きするだけ
+            # （デバフ量は重ねない＝下がりすぎ防止）。
+            target = o.battle
+            if target.atk_debuff_turns <= 0:
+                target.atk_bonus -= v
+                target.atk_debuff = v
+            target.atk_debuff_turns = max(target.atk_debuff_turns, e.extra)
+            self._say("📉 {} の攻撃力が{}ターンの間 -{}".format(self._nm(target), e.extra, v))
+        elif t == "def_down":
+            # atk_down と対の、スキン独自効果（例：まどマギの「呪詛」系アイテム）。
+            # 相手のバトル場の防御力を一定ターンの間だけ下げる。仕組みはatk_downと同じ。
+            target = o.battle
+            if target.def_debuff_turns <= 0:
+                target.def_bonus -= v
+                target.def_debuff = v
+            target.def_debuff_turns = max(target.def_debuff_turns, e.extra)
+            self._say("📉 {} の防御力が{}ターンの間 -{}".format(self._nm(target), e.extra, v))
         elif t == "stun":
             # エネミーではなくプレイヤーを縛る。交代で逃げられないように。
             o.stunned = True
@@ -1110,7 +1511,7 @@ class Game:
             # 山札の上から数枚めくって、その中から選ぶ。
             # 山札全部から選べると欲しいカードが必ず来てしまうので、候補を絞る。
             if len(p.enemy_hand) >= B["enemy_hand_size_max"]:
-                self._say("🚫 号令：エネミー手札が上限で追加できなかった")
+                self._say("🚫 号令：キャラクター手札が上限で追加できなかった")
             else:
                 look = [c for c in (self._draw_enemy(p)
                                     for _ in range(B["look_at_cards"])) if c]
@@ -1138,9 +1539,9 @@ class Game:
             if returned:
                 self._say_hidden(
                     p,
-                    "🌀 ベンチのエネミーが手札に戻った（{}）".format(
+                    "🌀 ベンチのキャラクターが手札に戻った（{}）".format(
                         "・".join(c.label + c.name for c in returned)),
-                    "🌀 {} のベンチのエネミーが手札に戻った".format(p.name))
+                    "🌀 {} のベンチのキャラクターが手札に戻った".format(p.name))
 
             # 神々を3体、ランダムにベンチへ直接召喚する
             picks = self.rng.sample(GOD_ARMY_KEYS, min(3, len(GOD_ARMY_KEYS), len(p.bench)))
@@ -1172,9 +1573,9 @@ class Game:
             if returned:
                 self._say_hidden(
                     p,
-                    "🌀 ベンチのエネミーが手札に戻った（{}）".format(
+                    "🌀 ベンチのキャラクターが手札に戻った（{}）".format(
                         "・".join(c.label + c.name for c in returned)),
-                    "🌀 {} のベンチのエネミーが手札に戻った".format(p.name))
+                    "🌀 {} のベンチのキャラクターが手札に戻った".format(p.name))
 
             # 魔神を3体、ランダムにベンチへ直接召喚する
             picks = self.rng.sample(DEMON_ARMY_KEYS, min(3, len(DEMON_ARMY_KEYS), len(p.bench)))
@@ -1186,6 +1587,22 @@ class Game:
                     "✨ {} が降臨した！".format(self._nm(demon)),
                     "✨ {} のベンチに何かが降臨した…！".format(p.name))
                 self._on_enter(p, demon)
+        elif t == "summon_god":
+            # スキン独自効果（例：転スラの「神域結界」）。神軍降臨(divine_army)と違い
+            # コストも発動条件もなく、ベンチの空き1枠に魔王クラスを1体だけ呼び出す
+            # 軽量版。既存のベンチのエネミーは失われない（空き枠に置くだけ）。
+            empty = next((i for i, m in enumerate(p.bench) if m is None), None)
+            if empty is None:
+                self._say("🚫 ベンチに空きがなく召喚できなかった")
+            else:
+                key = self.rng.choice(GOD_ARMY_KEYS)
+                god = self._spawn_god(p, key)
+                p.bench[empty] = god
+                self._say_hidden(
+                    p,
+                    "✨ {} が降臨した！".format(self._nm(god)),
+                    "✨ {} のベンチに何かが降臨した…！".format(p.name))
+                self._on_enter(p, god)
         elif t == "draw_items":
             look = []
             for _ in range(B["look_at_cards"] + v):
@@ -1199,7 +1616,7 @@ class Game:
         elif t == "revive":
             # 捨て札は中身が分かっているので、こちらは全部から自由に選べる
             if len(p.enemy_hand) >= B["enemy_hand_size_max"]:
-                self._say("🚫 蘇生：エネミー手札が上限で戻せなかった")
+                self._say("🚫 蘇生：キャラクター手札が上限で戻せなかった")
             else:
                 enemies = [x for x in p.discard if x.kind == "enemy"]
                 for x in enemies:
@@ -1221,6 +1638,190 @@ class Game:
                 # 相手トレーナーにも撃破ダメージが入る（_remove では入らない）
                 self._say("🌑 {} を葬り去った".format(self._nm(target)))
                 self._defeat(o, target, by_opponent=True)
+        # ---------------------------------------------------------------
+        # ここから下は、アルカナスキンの item_effect_overrides で新しく
+        # 使われている効果タイプ（2026-09-07 追加）。
+        # ---------------------------------------------------------------
+        elif t == "heal_cure_status":
+            # heal と同じ回復に加え、状態異常（毒・攻撃力/防御力ダウン）を治す
+            p.battle.hp = min(p.battle.hp_max, p.battle.hp + v)
+            p.battle.poison = 0
+            if p.battle.atk_debuff_turns > 0 and p.battle.atk_debuff:
+                p.battle.atk_bonus += p.battle.atk_debuff
+                p.battle.atk_debuff = 0
+                p.battle.atk_debuff_turns = 0
+            if p.battle.def_debuff_turns > 0 and p.battle.def_debuff:
+                p.battle.def_bonus += p.battle.def_debuff
+                p.battle.def_debuff = 0
+                p.battle.def_debuff_turns = 0
+            self._say("💚 {} のHPが{}回復し、状態異常が治った（{}/{}）".format(
+                self._nm(p.battle), v, p.battle.hp, p.battle.hp_max))
+        elif t == "shield_flat":
+            p.battle.shield_flat = v
+            self._say("🛡️ {} は次に受けるダメージを{}軽減する".format(self._nm(p.battle), v))
+        elif t == "shield_half":
+            p.battle.shield_half = True
+            self._say("🛡️ {} は次に受けるダメージを半減する".format(self._nm(p.battle)))
+        elif t == "def_buff_turns":
+            # atk_down の防御・正版。二重掛けはターン上書きのみ（量は重ねない）
+            target = p.battle
+            if target.def_buff_turns <= 0:
+                target.def_bonus += v
+                target.def_buff = v
+            target.def_buff_turns = max(target.def_buff_turns, e.extra)
+            self._say("📈 {} の防御力が{}ターンの間 +{}".format(self._nm(target), e.extra, v))
+        elif t == "atk_buff_turns":
+            target = p.battle
+            if target.atk_buff_turns <= 0:
+                target.atk_bonus += v
+                target.atk_buff = v
+            target.atk_buff_turns = max(target.atk_buff_turns, e.extra)
+            self._say("📈 {} の攻撃力が{}ターンの間 +{}".format(self._nm(target), e.extra, v))
+        elif t == "revive_field_fixed_hp":
+            # 捨て札からエネミーを1体選ばせ、手札を経由せずベンチへ直接
+            # HP固定で復活させる（蘇生の秘薬）
+            if not any(m is None for m in p.bench):
+                self._say("🚫 蘇生の秘薬：ベンチに空きがなく復活できなかった")
+            else:
+                enemies = [x for x in p.discard if x.kind == "enemy"]
+                for x in enemies:
+                    p.discard.remove(x)
+                self._begin_choice(p, "revive",
+                                   "蘇生の秘薬：捨て札から1枚選んでHP{}で復活".format(v),
+                                   enemies, 1, "bench_fixed_hp", hp_fixed=v)
+        elif t == "weapon_and_atk_down":
+            p.battle.atk_bonus += v
+            p.battle.equipment.append("{}(+{})".format(c.name, v))
+            self._say("🗡️ {} の攻撃+{}".format(self._nm(p.battle), v))
+            target = o.battle
+            if target.atk_debuff_turns <= 0:
+                target.atk_bonus -= e.extra
+                target.atk_debuff = e.extra
+            target.atk_debuff_turns = max(target.atk_debuff_turns, 2)
+            self._say("📉 {} の攻撃力が2ターンの間 -{}".format(self._nm(target), e.extra))
+        elif t == "atk_down_single":
+            # ターン経過に関係なく、相手が次に1回攻撃するときだけ弱める
+            o.battle.next_attack_bonus -= v
+            self._say("📉 {} の次の攻撃力が-{}".format(self._nm(o.battle), v))
+        elif t == "peek_hand":
+            if not o.enemy_hand:
+                self._say_hidden(
+                    p, "👀 相手のキャラクター手札は0枚だった",
+                    "👀 {} に手札を覗かれた（何も無かった）".format(p.name))
+            else:
+                seen = self.rng.choice(o.enemy_hand)
+                self._say_hidden(
+                    p,
+                    "👀 {} の手札を覗いた：{}{}".format(o.name, seen.label, seen.name),
+                    "👀 {} に手札を覗かれた".format(p.name))
+        elif t == "next_move_power":
+            p.battle.next_attack_bonus += v
+            self._say("💪 {} の次の技の威力+{}".format(self._nm(p.battle), v))
+        elif t == "peek_reorder_deck":
+            look = []
+            for _ in range(min(3, len(p.deck))):
+                look.append(p.deck.pop())
+            if not look:
+                self._say("🚫 絶対障壁：山札が空で並べ替えられなかった")
+            else:
+                self._begin_choice(p, "deck_top",
+                                   "絶対障壁：山札の上から{}枚を見て、1枚を一番上に置く".format(len(look)),
+                                   look, 1, "deck_top")
+        elif t == "weapon_and_armor":
+            p.battle.atk_bonus += v
+            p.battle.def_bonus += e.extra
+            p.battle.equipment.append("{}(攻+{})".format(c.name, v))
+            p.battle.equipment.append("{}(防+{})".format(c.name, e.extra))
+            self._say("🗡️🛡️ {} の攻撃+{}・防御+{}".format(self._nm(p.battle), v, e.extra))
+        elif t == "return_used_item":
+            if not self.item_discard:
+                self._say("🚫 気付け薬：捨て札にアイテムが無かった")
+            else:
+                look = list(self.item_discard)
+                self.item_discard = []
+                self._begin_choice(p, "return_used_item",
+                                   "気付け薬：使ったアイテムを1枚、捨て札から手札に戻す",
+                                   look, 1, "hand")
+        elif t == "dispel_buff":
+            target = o.battle
+            if target.atk_buff_turns > 0:
+                target.atk_bonus -= target.atk_buff
+                target.atk_buff = 0
+                target.atk_buff_turns = 0
+                self._say("🌀 入れ替え：{} の攻撃力アップを打ち消した".format(self._nm(target)))
+            elif target.def_buff_turns > 0:
+                target.def_bonus -= target.def_buff
+                target.def_buff = 0
+                target.def_buff_turns = 0
+                self._say("🌀 入れ替え：{} の防御力アップを打ち消した".format(self._nm(target)))
+            else:
+                self._say("🌀 入れ替え：打ち消すバフが無かった")
+        elif t == "weapon_self_cost":
+            p.battle.atk_bonus += v
+            p.battle.equipment.append("{}(+{})".format(c.name, v))
+            self._say("🗡️ {} の攻撃+{}".format(self._nm(p.battle), v))
+            self._say("🩸 代償：自分の {} に{}ダメージ".format(self._nm(p.battle), e.extra))
+            self._damage_enemy(p, p.battle, e.extra, source="禁術の代償", by_opponent=False)
+        elif t == "weapon_armor_self_cost":
+            p.battle.atk_bonus += v
+            p.battle.def_bonus += e.extra
+            p.battle.equipment.append("{}(攻+{})".format(c.name, v))
+            p.battle.equipment.append("{}(防+{})".format(c.name, e.extra))
+            self._say("🗡️🛡️ {} の攻撃+{}・防御+{}".format(self._nm(p.battle), v, e.extra))
+            self._say("🩸 代償：自分の {} に{}ダメージ".format(self._nm(p.battle), e.extra2))
+            self._damage_enemy(p, p.battle, e.extra2, source="禁術の代償", by_opponent=False)
+        elif t == "heal_self_lock":
+            p.battle.hp = min(p.battle.hp_max, p.battle.hp + v)
+            p.battle.attack_locked = True
+            self._say("💚 {} のHPが{}回復（{}/{}）。代償として次のターン攻撃できない".format(
+                self._nm(p.battle), v, p.battle.hp, p.battle.hp_max))
+        elif t == "weapon_self_defdown":
+            p.battle.atk_bonus += v
+            p.battle.def_bonus -= e.extra
+            p.battle.equipment.append("{}(攻+{})".format(c.name, v))
+            p.battle.equipment.append("{}(防-{})".format(c.name, e.extra))
+            self._say("🗡️ {} の攻撃+{}・防御-{}".format(self._nm(p.battle), v, e.extra))
+        elif t == "atk_down_mutual":
+            target = o.battle
+            if target.atk_debuff_turns <= 0:
+                target.atk_bonus -= v
+                target.atk_debuff = v
+            target.atk_debuff_turns = max(target.atk_debuff_turns, 2)
+            self._say("📉 {} の攻撃力が2ターンの間 -{}".format(self._nm(target), v))
+            p.battle.next_attack_bonus -= e.extra
+            self._say("🩸 代償：自分の次の攻撃力-{}".format(e.extra))
+        elif t == "armor_self_penalty":
+            p.battle.def_bonus += v
+            p.battle.equipment.append("{}(+{})".format(c.name, v))
+            self._say("🛡️ {} の防御+{}".format(self._nm(p.battle), v))
+            p.battle.next_attack_bonus -= e.extra
+            self._say("🩸 代償：自分の次の攻撃力-{}".format(e.extra))
+        elif t == "next_move_power_self_cost":
+            p.battle.next_attack_bonus += v
+            self._say("💪 {} の次の技の威力+{}".format(self._nm(p.battle), v))
+            self._say("🩸 代償：自分の {} に{}ダメージ".format(self._nm(p.battle), e.extra))
+            self._damage_enemy(p, p.battle, e.extra, source="禁術の代償", by_opponent=False)
+        elif t == "extra_item_use":
+            self._say("🩸 代償：自分の {} に{}ダメージ".format(self._nm(p.battle), v))
+            self._damage_enemy(p, p.battle, v, source="禁術の代償", by_opponent=False)
+            p.item_used = False
+            self._say("🎒 天罰の裁き符：このターン、もう1回アイテムを使える")
+        elif t == "weapon_self_lock":
+            p.battle.atk_bonus += v
+            p.battle.equipment.append("{}(+{})".format(c.name, v))
+            self._say("🗡️ {} の攻撃+{}".format(self._nm(p.battle), v))
+            p.stunned = True
+            self._say("🩸 代償：{} は次のターン、攻撃も交代もできない".format(p.name))
+        elif t == "weapon_exclude":
+            p.battle.atk_bonus += v
+            p.battle.equipment.append("{}(+{})".format(c.name, v))
+            self._say("🗡️ {} の攻撃+{}".format(self._nm(p.battle), v))
+            # apply_action が既にこのカードを item_discard に積んでいるので、
+            # そこから取り除いて item_removed へ移す（二度と山札に戻らない）
+            if c in self.item_discard:
+                self.item_discard.remove(c)
+            self.item_removed.append(c)
+            self._say("🕳️ {} はゲームから除外された".format(c.name))
 
     # ================================================================== 終了
     def _check_end(self):
@@ -1302,6 +1903,13 @@ class Game:
             "me": side(me, hide_hand=False),
             "opponent": side(op, hide_hand=True),
             "item_deck_count": len(self.item_deck),
+            # 三つ巴：乱入イベントが起きるまでは None。以降は現在の1体と、
+            # 山札に残っている数（0＝これが最後の1体）を返す
+            "third_force": ({
+                "enemy": self.third_force.enemy.to_dict() if self.third_force.enemy else None,
+                "deck_count": len(self.third_force.deck),
+                "defeated": self.third_force.defeated,
+            } if self.third_force.active else None),
             "actions": self.legal_actions(viewer),
             "winner": self.winner,
             "finish_reason": self.finish_reason,

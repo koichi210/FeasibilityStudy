@@ -30,9 +30,9 @@
 
     h += '<div class="ref-lead">🏟️ <b>場の構成</b></div>';
     h += '<div class="ref-note">バトル場1枚＋デッキ<b>' + c.bench_size + "</b>枚。" +
-           "バトル場のエネミーだけが攻撃・被攻撃の対象になる。</div>";
+           "バトル場のキャラクターだけが攻撃・被攻撃の対象になる。</div>";
 
-    h += '<div class="ref-lead">🃏 <b>エネミーの配置</b></div>';
+    h += '<div class="ref-lead">🃏 <b>キャラクターの配置</b></div>';
     h += '<div class="ref-note">場が空くと、山札から自動で「ベンチ」にカードが来る。<br>' +
            "<b>クリックして選び、空いている枠をクリックすると配置</b>される（回数制限なし）。<br>" +
            "ゲーム開始時の最初の配置だけは、先攻・後攻が不公平にならないよう自動で場に出る。</div>";
@@ -44,10 +44,10 @@
 
     h += '<div class="ref-lead">⚔️ <b>ダメージ計算</b></div>';
     h += '<div class="ref-note">ダメージ ＝ 攻撃力 － 相手の防御力（最低 <b>' + c.min_damage +
-           "</b> は必ず通る）。<br>エネミーのHPは全員共通で <b>" + c.enemy_hp + "</b>。</div>";
+           "</b> は必ず通る）。<br>キャラクターのHPは全員共通で <b>" + c.enemy_hp + "</b>。</div>";
 
     h += '<div class="ref-lead">💥 <b>トレーナーへのダメージ</b></div>';
-    h += '<div class="ref-note">自分のエネミーが<b>相手に倒された</b>とき <b>' +
+    h += '<div class="ref-note">自分のキャラクターが<b>相手に倒された</b>とき <b>' +
            c.kill_trainer_damage + "</b>ダメージ。<br>" +
            "相手の場が空のときに<b>直接攻撃</b>すると、攻撃力そのままダメージが入る。</div>";
 
@@ -60,7 +60,7 @@
            esc(ref.enemy.demon.text) + "</div>";
 
     h += '<div class="ref-lead">⚙️ <b>ゲームオプション</b></div>';
-    h += '<div class="ref-note">「エネミーの技」「魔王」のON/OFF、CPUの強さ（🐣初級／⚔️中級／🔥上級）は、' +
+    h += '<div class="ref-note">「キャラクターの技」「魔王」のON/OFF、CPUの強さ（🐣初級／⚔️中級／🔥上級）は、' +
            "右上の⚙️オプションからいつでも変更できる。</div>";
 
     return h;
@@ -112,7 +112,7 @@
     h += "</div>";
 
     h += '<div class="ref-note">' +
-           "HPは全エネミー共通で <b>" + c.enemy_hp + "</b>。" +
+           "HPは全キャラクター共通で <b>" + c.enemy_hp + "</b>。" +
            "ダメージは <b>攻撃 − 相手の防御</b>（最低 " + c.min_damage + " は必ず通る）。<br>" +
            "<b>" + c.attacks_before_retire + "回攻撃したら強制退場</b>。倒されると自分のトレーナーに " +
            c.kill_trainer_damage + " ダメージ。" +

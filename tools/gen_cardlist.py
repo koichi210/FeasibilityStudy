@@ -46,17 +46,17 @@ def main():
     a("> ⚠️ **このファイルは自動生成です。手で編集しないでください。**")
     a("> `balance.json` を変更したら `py -3 tools\\gen_cardlist.py` で作り直してください。")
     a("")
-    a("エネミーとアイテムは同じ「トランプ1箱」の読み替えです。")
-    a("同じ ♠K でも、エネミーデッキから出れば「暴君」、アイテムデッキから出れば「生贄の儀式」になります。")
+    a("キャラクターとアイテムは同じ「トランプ1箱」の読み替えです。")
+    a("同じ ♠K でも、キャラクターデッキから出れば「暴君」、アイテムデッキから出れば「生贄の儀式」になります。")
     a("")
     a("## 共通ルールの数値")
     a("")
     a("| 項目 | 値 |")
     a("|---|---|")
     a("| トレーナーHP | {} |".format(B["trainer_hp"]))
-    a("| エネミーHP（全員共通） | {} |".format(B["enemy_hp"]))
+    a("| キャラクターHP（全員共通） | {} |".format(B["enemy_hp"]))
     a("| 最低保証ダメージ | {} |".format(B["min_damage"]))
-    a("| エネミー撃破時のトレーナーダメージ | {} |".format(B["kill_trainer_damage"]))
+    a("| キャラクター撃破時のトレーナーダメージ | {} |".format(B["kill_trainer_damage"]))
     a("| ベンチ枚数 | {} |".format(B["bench_size"]))
     a("| 手札上限（アイテム） | {} |".format(B["hand_size_max"]))
     a("| 強制退場までの攻撃回数 | {} |".format(B["attacks_before_retire"]))
@@ -81,8 +81,8 @@ def main():
     a("---")
     a("")
 
-    # ---------------- エネミー ----------------
-    a("## ⚔️ エネミーカード")
+    # ---------------- キャラクター ----------------
+    a("## ⚔️ キャラクターカード")
     a("")
     for s in SUITS:
         a("### {} {}（{}）".format(SUIT_MARK[s], SUIT_NAME[s], SUIT_ROLE[s]))
@@ -131,7 +131,7 @@ def main():
     with open(OUT, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
     print("✅ 生成しました → {}".format(OUT))
-    print("   エネミー {} 種 / アイテム {} 種".format(len(enemies), len(items)))
+    print("   キャラクター {} 種 / アイテム {} 種".format(len(enemies), len(items)))
 
 
 if __name__ == "__main__":

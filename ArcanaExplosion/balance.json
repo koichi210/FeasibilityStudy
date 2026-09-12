@@ -51,6 +51,14 @@
     "def_bonus": 10
   },
 
+  "third_force": {
+    "_comment": "三つ巴：第三勢力の乱入イベント用の数値。全スキンの魔神軍降臨（各スキン6体 × 5スキン = 30体）の敵キャラの山札を持ち、常に1体だけ場に出て、ターン終了時に自動で片方を襲う。倒されたら倒したプレイヤーのベンチに自動配置される。山札を出し切って最後の1体まで倒し切ったら、とどめを刺した側の討伐勝利",
+    "trigger_turn": 10,
+    "hp": 130,
+    "atk_bonus": 10,
+    "def_bonus": 0
+  },
+
   "ability_values": {
     "D_J_splash": 20,
     "H_J_regen": 20,
@@ -80,6 +88,8 @@
     "armor_per_rank": 5,
     "burn_per_rank": 10,
     "burn_recoil_per_rank": 5,
+    "atk_down_per_rank": 4,
+    "atk_down_turns": 2,
 
     "H_J_heal": 50,
     "H_Q_trainer_heal": 40,

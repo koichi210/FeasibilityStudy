@@ -5,10 +5,10 @@
 トランプ52枚（ジョーカー無し）を、エネミーカード／アイテムカードに読み替える。
 「スート＝役割」「数字＝強さ」という原案のルールをそのままコード化している。
 
-  ♠ スペード … 高火力・ハイリスク
-  ♥ ハート   … 回復・防御
-  ♦ ダイヤ   … 攻撃
-  ♣ クラブ   … 戦術
+  ♠ スペード … バフ・デバフ（自分の攻撃力アップ／相手の攻撃力ダウン）
+  ♥ ハート   … 回復
+  ♦ ダイヤ   … 攻撃（直接ダメージ）
+  ♣ クラブ   … 戦術（交代・行動封じなど、数値ではなく行動を操作する）
 
 数値は balance.json 側に外出ししてあるので、調整はそちらで行う。
 
@@ -26,7 +26,12 @@ balance.json を手で直接編集したときだけ、今まで通りサーバ�
 
 技のid・ダメージ計算式・発動条件などのルール本体はスキンに関係なく
 ここに書かれた共通コードが担当する。スキンが変えられるのは見た目の名前と、
-ごく一部の数値（`balance_overrides`。例：転スラスキンの魔王リムル「多重展開」）だけ。
+ごく一部の数値（`balance_overrides`。例：転スラスキンの魔王リムル「多重展開」）、
+そしてアイテムに限っては効果そのもの（`item_effect_overrides`。例：ある枠を
+「攻撃力ダウン」効果に丸ごと差し替える）。ただし新しい効果の種類（type）を
+使うときは、その処理を game.py の `_use_item`／`_item_usable` にも追加すること
+（`item_effect_overrides` はあくまで「どの枠にどの効果を割り当てるか」の指定であって、
+効果そのものの実処理は変わらず game.py 側の担当）。
 
 --------------------------------------------------------------------------
 ホットリロードの実装メモ
@@ -83,6 +88,7 @@ class ItemEffect:
     value: int
     text: str
     extra: int = 0
+    extra2: int = 0  # 3つ目の数値パラメータが要る効果用（例：攻撃+防御+自分HPコストの3点セット）
     cry: str = ""   # 使用時に叫ぶ口上。ログに出る（演出専用、ルールには影響しない）
 
 
@@ -213,7 +219,7 @@ def apply_skin(skin_id: str = None) -> None:
         "DJ": {"name": FAN["DJ"], "id": "D_J_splash",
                "text": "攻撃時、相手のベンチ全体にも{}ダメージ".format(AV["D_J_splash"])},
         "HJ": {"name": FAN["HJ"], "id": "H_J_regen",
-               "text": "自分のターン開始時、自分の場の全エネミーのHPを{}回復"
+               "text": "自分のターン開始時、自分の場の全キャラクターのHPを{}回復"
                        "（ベンチにいられるのは{}ターンまで）".format(
                            AV["H_J_regen"], BALANCE["bench_ability_turns"])},
         "CJ": {"name": FAN["CJ"], "id": "C_J_disturb",
@@ -279,7 +285,8 @@ def apply_skin(skin_id: str = None) -> None:
 
     # --- アイテムカード ---------------------------------------------------
     # 技名と同じく、アイテムの「名前」「叫び口上」だけスキンから取る。
-    # 効果の種類（type）・数値・ルール文の組み立ては共通コード側。
+    # 効果の種類（type）・数値・ルール文の組み立ては共通コード側
+    # （※ `item_effect_overrides` で枠ごと差し替えることも可能。下記参照）。
     IFN.clear()
     IFN.update(SKIN["item_face_names"])
     IFC.clear()
@@ -290,7 +297,7 @@ def apply_skin(skin_id: str = None) -> None:
     divine_army_text = (
         "{name}：自分のトレーナーHPが{trigger}以下のとき使用可。代償として自分のトレーナーHP-{cost}。"
         "ベンチを一新し、J・Q・K の上位互換の{group}を3体ランダム召喚する"
-        "（元のベンチのエネミーは失われず、エネミー手札に戻る）。"
+        "（元のベンチのキャラクターは失われず、キャラクター手札に戻る）。"
         "召喚された{group}は装備アイテム（武器・防具系のバフ）を使えない"
     ).format(name=IFN["CK"], trigger=BALANCE["divine_army"]["trigger_hp"],
              cost=BALANCE["divine_army"]["cost_hp"], group=DIVINE_ARMY_GROUP_NAME)
@@ -300,7 +307,7 @@ def apply_skin(skin_id: str = None) -> None:
     demon_army_text = (
         "{name}：いつでも使用可。代償として自分のトレーナーHP-{cost}。"
         "ベンチを一新し、♠♦の10・9・8 の上位互換の{group}を3体ランダム召喚する"
-        "（元のベンチのエネミーは失われず、エネミー手札に戻る）"
+        "（元のベンチのキャラクターは失われず、キャラクター手札に戻る）"
     ).format(name=IFN["SA"], cost=BALANCE["demon_army"]["cost_hp"], group=DEMON_ARMY_GROUP_NAME)
 
     ITEM_FACE.clear()
@@ -312,7 +319,7 @@ def apply_skin(skin_id: str = None) -> None:
                          "{}：トレーナーHPを{}回復".format(IFN["HQ"], IV["H_Q_trainer_heal"]), cry=IFC["HQ"]),
         "HK": ItemEffect("full_heal", 0, "{}：バトル場のHPを全回復".format(IFN["HK"]), cry=IFC["HK"]),
         "HA": ItemEffect("revive", 0,
-                         "{}：捨て札のエネミー1体をエネミー手札に戻す".format(IFN["HA"]), cry=IFC["HA"]),
+                         "{}：捨て札のキャラクター1体をキャラクター手札に戻す".format(IFN["HA"]), cry=IFC["HA"]),
         # ♦ 武器
         "DJ": ItemEffect("weapon", IV["D_J_weapon"],
                          "{}：攻撃+{}（装備）".format(IFN["DJ"], IV["D_J_weapon"]), cry=IFC["DJ"]),
@@ -344,9 +351,25 @@ def apply_skin(skin_id: str = None) -> None:
         "SA": ItemEffect("demon_army", 0, demon_army_text, cry=IFC["SA"]),
     })
 
+    # --- スキン独自のアイテム効果（例：転スラ「暴食者」で相手の攻撃力ダウン） -----
+    # 通常はここまでの共通定義（効果の種類・数値・文章はスキンに関係ない）がそのまま
+    # 使われるが、`item_effect_overrides` にキー（例："DA"）があれば、その枠だけ
+    # type・value・text・extra・cry を丸ごと差し替える。ルール本体（game.py の
+    # `_use_item`）が type を見て振り分けるので、新しい type を使うときは
+    # game.py 側にもハンドラを追加すること（例：atk_down＝攻撃力を一定ターン下げる）。
+    for key, ov in SKIN.get("item_effect_overrides", {}).items():
+        ITEM_FACE[key] = ItemEffect(
+            type=ov["type"],
+            value=ov.get("value", 0),
+            text=ov["text"],
+            extra=ov.get("extra", 0),
+            extra2=ov.get("extra2", 0),
+            cry=ov.get("cry", IFC.get(key, "")),
+        )
+
     # 数字カード（2〜10）の名前。数字が上がるほど大仰になるように並べてある。
-    # 効果はスートごとに固定（♥回復 / ♦武器 / ♣防具 / ♠呪符）で、
-    # 数字が強さなので、名前もその順で格を上げていく。
+    # 効果はスートごとに固定（♥回復 / ♦攻撃 / ♣戦術 / ♠バフ・デバフ）で、
+    # 数字が強さなので、名前もその順で格を上げていく（詳細は make_item() 参照）。
     ITEM_NUMBER_NAMES.clear()
     ITEM_NUMBER_NAMES.update(SKIN["item_number_names"])
     # 数字カードの口上。名前を差し込んで叫ぶ。
@@ -430,20 +453,35 @@ def make_item(suit: str, rank: int) -> Card:
     name = ITEM_NUMBER_NAMES[suit][rank - 2]
     cry = ITEM_NUMBER_CRIES[suit].format(name)
     if suit == "H":
+        # ♥ 回復：バトル場のHPを回復
         v = n * iv["heal_per_rank"]
         eff = ItemEffect("heal", v, "{}：バトル場のHPを{}回復".format(name, v), cry=cry)
     elif suit == "D":
-        v = n * iv["weapon_per_rank"]
-        eff = ItemEffect("weapon", v, "{}：攻撃+{}（装備）".format(name, v), cry=cry)
-    elif suit == "C":
-        v = n * iv["armor_per_rank"]
-        eff = ItemEffect("armor", v, "{}：防御+{}（装備）".format(name, v), cry=cry)
-    else:  # S
+        # ♦ 攻撃：相手バトル場に直接ダメージ
         v = n * iv["burn_per_rank"]
-        rec = n * iv["burn_recoil_per_rank"]
-        eff = ItemEffect("burn", v,
-                         "{}：相手バトル場に{}ダメージ / 自分にも{}ダメージ".format(name, v, rec),
-                         extra=rec, cry=cry)
+        eff = ItemEffect("burn", v, "{}：相手バトル場に{}ダメージ".format(name, v), cry=cry)
+    elif suit == "C":
+        # ♣ 戦術：数値ではなく行動そのものを操作する（ランク帯で3種類に分ける）
+        if n <= 4:
+            eff = ItemEffect("free_swap", 0,
+                             "{}：交代権を消費せずに交代する".format(name), cry=cry)
+        elif n <= 7:
+            eff = ItemEffect("cure_fatigue", 0,
+                             "{}：疲労を回復して今すぐ攻撃できる".format(name), cry=cry)
+        else:
+            eff = ItemEffect("stun", 0,
+                             "{}：相手は次のターン攻撃も交代もできない".format(name), cry=cry)
+    else:  # S
+        # ♠ バフ・デバフ：偶数ランクは自分の攻撃力アップ、奇数ランクは相手の攻撃力ダウン
+        if n % 2 == 0:
+            v = n * iv["weapon_per_rank"]
+            eff = ItemEffect("weapon", v, "{}：攻撃+{}（装備）".format(name, v), cry=cry)
+        else:
+            v = n * iv["atk_down_per_rank"]
+            turns = iv["atk_down_turns"]
+            eff = ItemEffect("atk_down", v,
+                             "{}：相手の攻撃力が{}ターンの間-{}".format(name, turns, v),
+                             extra=turns, cry=cry)
     return Card(suit=suit, rank=rank, kind="item", name=name, effect=eff)
 
 

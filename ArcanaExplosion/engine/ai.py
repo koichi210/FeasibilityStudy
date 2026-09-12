@@ -94,6 +94,15 @@ def _score_item(g: Game, p: Player, o: Player, card, conf: dict) -> float:
         # ただし代償で自滅してしまうなら使わない
         cost = B["divine_army"]["cost_hp"]
         return 200 if p.trainer_hp > cost else -1
+    if t == "atk_down":
+        # スキン独自効果。相手が場に出ていて、まだかかっていないときだけ価値がある
+        return v * 1.3 if om and om.atk_debuff_turns <= 0 else -1
+    if t == "def_down":
+        return v * 1.1 if om and om.def_debuff_turns <= 0 else -1
+    if t == "summon_god":
+        # コストなしでベンチに戦力を1体増やせる（_item_usable が空き枠を保証済み）。
+        # 切り札級の divine_army/demon_army ほどではないが、使わない理由がないので高め。
+        return 45
     if t == "demon_army":
         # いつでも使えるぶん、divine_army と違って「相手が瀕死」の保証がない。
         # 代償で自滅するなら論外。相手が瀕死ならとどめの切り札、
@@ -104,6 +113,83 @@ def _score_item(g: Game, p: Player, o: Player, card, conf: dict) -> float:
         if o.trainer_hp <= B["divine_army"]["trigger_hp"]:
             return 200
         return 30 if p.trainer_hp > cost * 2 else -1
+    # -----------------------------------------------------------------
+    # ここから下は、アルカナスキンの item_effect_overrides で新しく
+    # 使われている効果タイプ（2026-09-07 追加）のスコアリング。
+    # 厳密なバランスは求めず、「死蔵させない」程度のヒューリスティックでよい。
+    # -----------------------------------------------------------------
+    if t == "heal_cure_status":
+        if not bm or hp_rate > conf["heal_hp_threshold"]:
+            return -1
+        missing = bm.hp_max - bm.hp
+        bonus = 15 if (bm.poison or bm.atk_debuff_turns > 0 or bm.def_debuff_turns > 0) else 0
+        return min(v, missing) * 1.0 + bonus
+    if t in ("shield_flat", "shield_half"):
+        # HPが減っているほど価値が高い
+        return v * 1.0 + (40 if hp_rate < 0.5 else 0) if bm else -1
+    if t in ("atk_buff_turns", "next_move_power"):
+        # 自分のバトル場カードが強いほど（攻撃できる状態なら）価値が高い
+        return v * 1.0 if bm and bm.can_attack else -1
+    if t == "def_buff_turns":
+        return v * 0.8 if bm else -1
+    if t == "revive_field_fixed_hp":
+        return v * 0.8 if any(x.kind == "enemy" for x in p.discard) else -1
+    if t == "weapon_and_atk_down":
+        if not bm or not bm.can_attack:
+            return -1
+        return v * 1.2 + e.extra * 1.0
+    if t == "atk_down_single":
+        return v * 1.2 if om and om.can_attack else -1
+    if t == "peek_hand":
+        return 8 if o.enemy_hand else -1
+    if t == "peek_reorder_deck":
+        return 10 if p.deck else -1
+    if t == "weapon_and_armor":
+        return v * 0.7 + e.extra * 0.6 if bm else -1
+    if t == "return_used_item":
+        return 12 if g.item_discard else -1
+    if t == "dispel_buff":
+        # 相手が強いほど（バフを剥がす価値が高いほど）評価を上げる
+        if not om:
+            return -1
+        return 30 if (om.atk_buff_turns > 0 or om.def_buff_turns > 0) else -1
+    if t == "weapon_self_cost":
+        if not bm or not bm.can_attack:
+            return -1
+        return v * 1.0 - e.extra * 1.5
+    if t == "weapon_armor_self_cost":
+        if not bm:
+            return -1
+        return v * 0.6 + e.extra * 0.6 - e.extra2 * 1.5
+    if t == "heal_self_lock":
+        if not bm or hp_rate > conf["heal_hp_threshold"]:
+            return -1
+        return min(v, bm.hp_max - bm.hp) * 0.9
+    if t == "weapon_self_defdown":
+        if not bm or not bm.can_attack:
+            return -1
+        return v * 1.0 - e.extra * 1.0
+    if t == "atk_down_mutual":
+        if not om:
+            return -1
+        return v * 1.2 - e.extra * 1.0
+    if t == "armor_self_penalty":
+        return v * 0.7 - e.extra * 1.0 if bm else -1
+    if t == "next_move_power_self_cost":
+        if not bm or not bm.can_attack:
+            return -1
+        return v * 1.0 - e.extra * 1.5
+    if t == "extra_item_use":
+        # もう1回アイテムを使えるおまけの価値。手札に他アイテムが残っているほど価値が高い
+        return 20 - v * 0.5 if bm and len(p.hand) > 1 else -1
+    if t == "weapon_self_lock":
+        if not bm or not bm.can_attack:
+            return -1
+        return v * 0.9
+    if t == "weapon_exclude":
+        if not bm or not bm.can_attack:
+            return -1
+        return v * 1.2
     return 0
 
 
@@ -140,6 +226,23 @@ def _can_finish_now(p: Player, o: Player) -> bool:
     return o.trainer_hp <= atk
 
 
+def _can_finish_third_force(g: Game, p: Player) -> bool:
+    """三つ巴：いま第三勢力を攻撃すれば、その1体を倒し切れるかどうか（簡易判定）。"""
+    tf = g.third_force
+    if not (tf.enemy and p.battle and not p.attacked and p.battle.can_attack):
+        return False
+    atk = p.battle.base_atk + p.battle.atk_bonus
+    if p.has_bench_ability("C_K_command"):
+        atk += AV["C_K_command"]
+    if p.battle.ability_id == "S_J_reckless":
+        atk += AV["S_J_reckless_bonus"]
+    dfn = tf.enemy.base_def + tf.enemy.def_bonus
+    if p.battle.ability_id == "D_Q_pierce":
+        dfn = int(dfn * AV["D_Q_pierce_rate"])
+    dmg = max(B["min_damage"], atk - dfn)
+    return dmg >= tf.enemy.hp
+
+
 def choose_action(g: Game, level: str = DEFAULT_CPU_LEVEL) -> dict:
     """CPU の1手を返す。"""
     conf = _level_conf(level)
@@ -173,6 +276,13 @@ def choose_action(g: Game, level: str = DEFAULT_CPU_LEVEL) -> dict:
         battle_places = [a for a in by_type["place"] if a["slot"] == "battle"]
         pool = battle_places or by_type["place"]
         return max(pool, key=lambda a: _hand_power(p, a["hand"]))
+
+    # 0.4) 三つ巴：いま第三勢力を倒し切れるなら、レベルを問わず最優先で狙う
+    #     （山札を出し切った最後の1体を倒せば、そのまま討伐勝利になるため）
+    if "attack" in by_type and _can_finish_third_force(g, p):
+        tf_atk = next((a for a in by_type["attack"] if a.get("target") == "third_force"), None)
+        if tf_atk and not g.third_force.deck:
+            return tf_atk
 
     # 0.5) 上級は、今すぐ倒し切れるならそれを最優先する
     if conf.get("lethal_priority") and "attack" in by_type and _can_finish_now(p, o):

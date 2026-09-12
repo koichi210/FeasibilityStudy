@@ -30,9 +30,9 @@
   </section>
 
   <section class="cardsec">
-    <h2>⚔️ エネミーカード</h2>
+    <h2>⚔️ キャラクターカード</h2>
     <p class="secnote" id="enemySecNote">
-      自分のエネミーデッキ（52枚）から場に出ます。
+      自分のキャラクターデッキ（52枚）から場に出ます。
     </p>
     <div class="refbody" id="refEnemy">読み込み中…</div>
   </section>
@@ -48,7 +48,7 @@ fetch("/api/reference")
     document.getElementById("refItem").innerHTML = CardRef.itemHtml(ref, true);
     document.getElementById("refEnemy").innerHTML = CardRef.enemyHtml(ref, true);
     document.getElementById("enemySecNote").textContent =
-      "自分のエネミーデッキ（52枚）から場に出ます。バトル場1枚＋ベンチ" +
+      "自分のキャラクターデッキ（52枚）から場に出ます。バトル場1枚＋ベンチ" +
       ref.constants.bench_size + "枚。";
   })
   .catch((e) => {

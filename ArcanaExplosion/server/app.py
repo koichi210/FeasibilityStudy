@@ -100,6 +100,19 @@ def cards_page():
     return send_from_directory(WEB_DIR, "cards.html")
 
 
+@app.route("/codex")
+def codex_page():
+    """全スキンぶんのカード図鑑（ヘルプメニュー相当）。
+
+    こちらは「今遊んでいるスキン」ではなく全スキンを一度に見せるページなので、
+    /cards のように起動中サーバーのスキンを切り替えて見せるのではなく、
+    tools/gen_codex_data.py が事前に書き出した web/codex_data.json を読む
+    （= 対戦中の他プレイヤーのスキンに影響を与えない）。
+    スキンやバランスを変えたら `py -3 tools\\gen_codex_data.py` で作り直すこと。
+    """
+    return send_from_directory(WEB_DIR, "codex.html")
+
+
 @app.route("/api/reference")
 def api_reference():
     """カード図鑑のデータ。実際のカード定義から作るので表示がズレない。"""
@@ -124,9 +137,9 @@ def api_options():
 def api_skin():
     """スキン（カード名の見た目セット）を切り替える。
 
-    skin_config.json に保存（次回サーバー起動時の既定値用）した上で、
-    cards.apply_skin() を呼んでその場で反映する。サーバー再起動は不要
-    （「新しい設定でゲームを始める」＝rematch すれば次の対戦から新しい名前になる）。
+    対戦中のプレイヤーが自分のスキンを変更する。
+    （グローバルな設定ではなく、部屋の中でそのプレイヤーのスキン設定を変更する。
+     これにより LAN対戦で相手と異なるスキンを使用できる。）
     """
     global REFERENCE
     b = _body()
@@ -134,13 +147,32 @@ def api_skin():
     valid_ids = {s["id"] for s in skin_store.available_skins()}
     if skin_id not in valid_ids:
         return jsonify({"error": "そのスキンは存在しません。"}), 400
-    skin_store.set_current_skin(skin_id)
-    cards.apply_skin(skin_id)
-    REFERENCE = None  # カード図鑑のキャッシュも作り直す
+
+    try:
+        room, seat = REGISTRY.authed(b.get("code"), b.get("token"))
+    except RoomError as e:
+        return _fail(e, 404)
+
+    # このプレイヤーのスキンを設定
+    room.skins[seat] = skin_id
+
+    # スキンを一時的に適用して図鑑を再生成
+    from engine import cards
+    skin_before = cards.SKIN_ID
+    try:
+        cards.apply_skin(skin_id)
+        # 図鑑をその場で再生成
+        global REFERENCE
+        REFERENCE = build_reference()
+    finally:
+        # スキンを元に戻す
+        if skin_before:
+            cards.apply_skin(skin_before)
+
     return jsonify({
         "ok": True,
         "skin": skin_id,
-        "message": "スキンを「{}」に切り替えました。次に始める対戦から反映されます。".format(skin_id),
+        "message": "スキンを切り替えました。",
     })
 
 

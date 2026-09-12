@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>スキン図鑑 — アルカナエクスプロージョン</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="cardspage codexpage">
+
+<header class="topbar">
+  <div class="title">📖 スキン図鑑</div>
+  <div class="turninfo"><span class="hint">全スキンのカードをまとめて見られます</span></div>
+  <button id="printBtn" class="btn btn-ghost">🖨️ 印刷する</button>
+</header>
+
+<nav class="skin-tabs" id="skinTabs"></nav>
+
+<div class="codex-search">
+  <input type="search" id="searchInput" placeholder="🔍 カード名・技名・効果で検索…" autocomplete="off">
+  <span class="codex-hit" id="hitCount"></span>
+</div>
+
+<main class="cardsmain">
+
+  <section class="cardsec">
+    <h2>📖 ゲームルール</h2>
+    <div class="refbody" id="refRules">読み込み中…</div>
+  </section>
+
+  <section class="cardsec">
+    <h2>🎒 アイテムカード</h2>
+    <p class="secnote">
+      アイテムデッキは<b>両プレイヤーで共有の1箱</b>。毎ターン1枚引いて、<b>1ターンに1枚まで</b>使えます。
+    </p>
+    <div class="refbody" id="refItem">読み込み中…</div>
+  </section>
+
+  <section class="cardsec">
+    <h2>⚔️ エネミーカード</h2>
+    <p class="secnote" id="enemySecNote">
+      自分のエネミーデッキ（52枚）から場に出ます。
+    </p>
+    <div class="refbody" id="refEnemy">読み込み中…</div>
+  </section>
+
+</main>
+
+<script src="/static/reference.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var skins = [];
+  var current = null;
+
+  function render(skin) {
+    var ref = skin.ref;
+    document.getElementById("refRules").innerHTML = CardRef.rulesHtml(ref);
+    document.getElementById("refItem").innerHTML = CardRef.itemHtml(ref, true);
+    document.getElementById("refEnemy").innerHTML = CardRef.enemyHtml(ref, true);
+    document.getElementById("enemySecNote").textContent =
+      "自分のエネミーデッキ（52枚）から場に出ます。バトル場1枚＋ベンチ" +
+      ref.constants.bench_size + "枚。";
+    applyFilter();
+  }
+
+  function selectSkin(id) {
+    current = skins.find(function (s) { return s.id === id; }) || skins[0];
+    Array.prototype.forEach.call(
+      document.querySelectorAll(".skin-tab"),
+      function (btn) { btn.setAttribute("aria-selected", String(btn.dataset.id === current.id)); }
+    );
+    render(current);
+  }
+
+  function applyFilter() {
+    var q = document.getElementById("searchInput").value.trim().toLowerCase();
+    var rows = document.querySelectorAll(".cardsmain table.ref-table tr");
+    var shown = 0;
+    rows.forEach(function (tr) {
+      var hit = !q || tr.textContent.toLowerCase().indexOf(q) !== -1;
+      tr.style.display = hit ? "" : "none";
+      if (hit) shown++;
+    });
+    // スート単位のグループごと丸ごと隠す（該当0件のとき）
+    document.querySelectorAll(".cardsmain .ref-group").forEach(function (g) {
+      var anyVisible = Array.prototype.some.call(
+        g.querySelectorAll("table.ref-table tr"),
+        function (tr) { return tr.style.display !== "none"; }
+      );
+      g.style.display = (!q || anyVisible) ? "" : "none";
+    });
+    var hint = document.getElementById("hitCount");
+    hint.textContent = q ? "該当 " + shown + " 行" : "";
+  }
+
+  fetch("/static/codex_data.json")
+    .then(function (r) { return r.json(); })
+    .then(function (json) {
+      skins = json.skins;
+      document.getElementById("skinTabs").innerHTML = skins.map(function (s) {
+        return '<button type="button" class="skin-tab" data-id="' + s.id + '">' +
+          CardRef.esc(s.label) + "</button>";
+      }).join("");
+      document.getElementById("skinTabs").addEventListener("click", function (e) {
+        var btn = e.target.closest(".skin-tab");
+        if (btn) selectSkin(btn.dataset.id);
+      });
+      selectSkin(skins[0].id);
+    })
+    .catch(function (e) {
+      var msg = '<div class="ref-note">読み込みに失敗しました。' +
+        '<code>tools\\gen_codex_data.py</code> を実行して web/codex_data.json を作ってください。<br>' + e + "</div>";
+      document.getElementById("refRules").innerHTML = msg;
+      document.getElementById("refItem").innerHTML = "";
+      document.getElementById("refEnemy").innerHTML = "";
+    });
+
+  document.getElementById("searchInput").addEventListener("input", applyFilter);
+  document.getElementById("printBtn").addEventListener("click", function () { window.print(); });
+})();
+</script>
+</body>
+</html>

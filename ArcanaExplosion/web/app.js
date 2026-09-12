@@ -388,6 +388,12 @@ function enemyCard(m, opts) {
   if (m.fatigue > 0) badges.push('<span class="chip warn">😴 疲労' + m.fatigue + "</span>");
   if (m.poison > 0) badges.push('<span class="chip warn">☠️ 毒' + m.poison + "</span>");
   if (m.curse > 0) badges.push('<span class="chip warn">🩸 呪' + m.curse + "</span>");
+  if (m.atk_debuff_turns > 0) {
+    badges.push('<span class="chip warn">📉攻撃-' + m.atk_debuff + " 残り" + m.atk_debuff_turns + "T</span>");
+  }
+  if (m.def_debuff_turns > 0) {
+    badges.push('<span class="chip warn">📉防御-' + m.def_debuff + " 残り" + m.def_debuff_turns + "T</span>");
+  }
   if (m.is_demon) badges.push('<span class="chip info">👹 あと' + m.demon_turns + "T</span>");
   if (m.bench_turns_left != null) {
     badges.push('<span class="chip warn">⌛ デッキあと' + m.bench_turns_left + "T</span>");
@@ -432,6 +438,12 @@ function enemyZoom(m) {
   if (m.fatigue > 0) st.push("😴 疲労中（あと" + m.fatigue + "ターン攻撃できない）");
   if (m.poison > 0) st.push("☠️ 毒（毎ターン" + m.poison + "ダメージ）");
   if (m.curse > 0) st.push("🩸 呪い（毎ターン" + m.curse + "ダメージ）");
+  if (m.atk_debuff_turns > 0) {
+    st.push("📉 攻撃力ダウン中（-" + m.atk_debuff + "、あと" + m.atk_debuff_turns + "ターンで解除）");
+  }
+  if (m.def_debuff_turns > 0) {
+    st.push("📉 防御力ダウン中（-" + m.def_debuff + "、あと" + m.def_debuff_turns + "ターンで解除）");
+  }
   if (m.atk_buff) st.push("👑 指揮官キングの支援：攻撃+" + m.atk_buff);
   if (m.def_buff) st.push("🛡️ 聖女クイーンの支援：防御+" + m.def_buff);
   if (m.is_demon) st.push("👹 魔王（あと" + m.demon_turns + "ターンで消滅）");
@@ -659,6 +671,36 @@ function render() {
   const myTrHp = prevTrainerHp.me;
   pulse($("myTrainer"), myTrHp == null ? null : (me.trainer_hp < myTrHp ? "hit" : me.trainer_hp > myTrHp ? "heal" : null));
   prevTrainerHp.me = me.trainer_hp;
+
+  // --- 三つ巴：第三勢力 ---
+  // どちらの味方でもない乱入者。専用ボタンではなく、相手のバトル場と同じ
+  // 「対象のカードをクリックして攻撃」という動線に合わせてある。
+  const tf = STATE.third_force;
+  const tfZone = $("thirdForceZone");
+  if (tf) {
+    tfZone.classList.remove("hidden");
+    const atkTF = (byType.attack || []).find((a) => a.target === "third_force");
+    const slotBox = $("thirdForceSlot");
+    slotBox.innerHTML = "";
+    if (tf.enemy) {
+      const card = enemyCard(tf.enemy, {
+        mine: false,
+        flash: flashClass(tf.enemy),
+        onClick: atkTF ? () => send({ type: "attack", target: "third_force" }) : null,
+        title: atkTF ? atkTF.label + "（クリックで攻撃）" : "",
+      });
+      card.classList.add("tf-enemy");
+      slotBox.appendChild(card);
+    } else if (tf.defeated) {
+      slotBox.innerHTML = '<div class="slot-empty">討伐済み</div>';
+    }
+    $("thirdForceDeckCount").textContent = tf.defeated
+      ? "🏆 山札を出し切った！"
+      : "🌩️ 控え " + tf.deck_count + "体";
+    $("thirdForceHint").classList.toggle("hidden", !atkTF);
+  } else {
+    tfZone.classList.add("hidden");
+  }
 
   // --- 場 ---
   fill($("opBattle"), [op.battle], { mine: false });
@@ -1108,10 +1150,10 @@ function hintText(st, me, byType) {
 
   // バトル場の繰り上げ待ちは、手番より優先して案内する
   if (st.pending_promote === st.viewer) {
-    return "🔀 バトル場が空きました！デッキから出すエネミーをクリックしてね";
+    return "🔀 バトル場が空きました！デッキから出すキャラクターをクリックしてね";
   }
   if (st.pending_promote !== null && st.pending_promote !== undefined) {
-    return "⏳ 相手がバトル場に出すエネミーを選んでいます…";
+    return "⏳ 相手がバトル場に出すキャラクターを選んでいます…";
   }
 
   if (!st.is_my_turn) {
@@ -1140,7 +1182,7 @@ function hintText(st, me, byType) {
   else if (me.battle && me.battle.fatigue > 0) {
     bits.push("😴 バトル場は疲労中（あと" + me.battle.fatigue + "ターン）");
   }
-  if ((byType.place || []).length) bits.push("🃏 配置できるエネミーがいます");
+  if ((byType.place || []).length) bits.push("🃏 配置できるキャラクターがいます");
   if (me.item_used) bits.push("アイテムは使用済み");
   if (me.swaps_left <= 0) bits.push("交代は使用済み");
   if (me.attacked) bits.push("⏭️ 終わったら「ターン終了」を押してね");
@@ -1254,7 +1296,9 @@ function openOptions() {
 async function loadSkinOptions() {
   try {
     if (!SKIN_INFO) SKIN_INFO = await api("/api/options");
-    renderSkinButtons(SKIN_INFO.current_skin);
+    // 対戦中ならば、現在のセッションのスキン。そうでなければグローバル設定から
+    const currentSkin = (STATE && STATE.room && STATE.room.my_skin) || SKIN_INFO.current_skin;
+    renderSkinButtons(currentSkin);
   } catch (e) { /* 取得できなくてもオプション画面自体は開けるようにしておく */ }
 }
 
@@ -1275,10 +1319,25 @@ function renderSkinButtons(activeId) {
 
 async function selectSkin(skinId) {
   try {
-    const r = await api("/api/skin", { skin: skinId });
+    // セッション中は room code/token を送る。オプション画面でセッション外の場合は無視
+    const body = { skin: skinId };
+    if (SESSION) {
+      body.code = SESSION.code;
+      body.token = SESSION.token;
+    }
+    const r = await api("/api/skin", body);
     SKIN_INFO.current_skin = skinId;
     renderSkinButtons(skinId);
     showToast(r.message || "スキンを切り替えました。");
+    // ゲーム中の場合、盤面を再取得して即座に反映
+    if (SESSION && STATE) {
+      try {
+        STATE = await api("/api/room/state?code=" + encodeURIComponent(SESSION.code) +
+                          "&token=" + encodeURIComponent(SESSION.token));
+        lastRev = -1;  // 再描画を強制
+        render();
+      } catch (e) { /* 再取得失敗時は現在の画面のまま */ }
+    }
   } catch (e) { showToast(e.message); }
 }
 

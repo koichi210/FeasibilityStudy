@@ -70,6 +70,11 @@ OPTION_LABELS = {
     "demon_lord": "魔王（♠A）",
 }
 
+# _say_hidden / _say_visible / _damage_enemy の actor 引数用の「未指定」印。
+# None は「中立（actor=None）を明示的に指定したい」場合と衝突するので、
+# デフォルト値には別のセンチネルを使う。
+_AUTO_ACTOR = object()
+
 
 # ==========================================================================
 # ログ1行分
@@ -85,6 +90,11 @@ class LogEntry:
     """
     text: str
     private_to: Optional[int] = None
+    # 誰の行動を表す行か。0/1 = プレイヤーの席番号、None = 中立/システムメッセージ
+    # （ゲーム開始・ターン区切り・第三勢力の乱入など、どちらのプレイヤーの
+    # 「行動」でもない行はNoneのままにする。view() で actor 付きでクライアントへ渡し、
+    # 画面側は自分の行動＝白のまま、相手の行動だけ色を付ける）。
+    actor: Optional[int] = None
 
     def __str__(self) -> str:   # simulate.py の print 用
         return self.text
@@ -320,14 +330,19 @@ class Game:
         self.uid_seq += 1
         return self.uid_seq
 
-    def _say(self, msg: str, private_to: Optional[int] = None):
+    def _say(self, msg: str, private_to: Optional[int] = None,
+             actor: Optional[int] = None):
         """ログを1行足す。
 
         private_to に席番号を渡すと、その人の画面にだけ出る。
         ベンチ・エネミー手札の中身は相手に伏せているので、
         それらに触れる行は必ず private_to を付けること（付け忘れ＝情報漏洩）。
+
+        actor に席番号を渡すと「誰の行動か」を記録する。画面側はこれを見て
+        相手の行動だけ色を付ける。中立の行（システムメッセージ等）は
+        actor=None のままでよい。
         """
-        self.log.append(LogEntry(msg, private_to))
+        self.log.append(LogEntry(msg, private_to, actor))
 
     def _fx(self, kind: str, attacker: Optional[Enemy] = None,
             target: Optional[Enemy] = None, title: str = "", cry: str = "",
@@ -350,15 +365,22 @@ class Game:
             "tone": tone,
         }
 
-    def _say_hidden(self, owner: Player, mine: str, theirs: str):
+    def _say_hidden(self, owner: Player, mine: str, theirs: str,
+                     actor: object = _AUTO_ACTOR):
         """伏せてある場所（ベンチ・エネミー手札）の出来事を、見せ方を変えて両者に伝える。
 
         owner には具体的なカード名入りの `mine` を、相手には
         カード名を伏せた `theirs` を出す。「何かが起きた」ことは伝わるが
         「何のカードか」は漏れない。
+
+        actor を省略すると owner の行動として記録する（多くはこれでよい）。
+        第三勢力がらみなど owner の行動と言えない場合だけ、呼び出し側で
+        明示的に actor=None（中立）などを渡す。
         """
-        self._say(mine, private_to=owner.idx)
-        self._say(theirs, private_to=1 - owner.idx)
+        if actor is _AUTO_ACTOR:
+            actor = owner.idx
+        self._say(mine, private_to=owner.idx, actor=actor)
+        self._say(theirs, private_to=1 - owner.idx, actor=actor)
 
     # ------------------------------------------------------------ 山札操作
     def _draw_enemy(self, p: Player) -> Optional[Card]:
@@ -369,7 +391,7 @@ class Game:
             p.discard = [c for c in p.discard if c.kind != "enemy"]
             p.deck = enemies
             self.rng.shuffle(p.deck)
-            self._say("♻️ {} の捨て札をシャッフルして山札を再構築".format(p.name))
+            self._say("♻️ {} の捨て札をシャッフルして山札を再構築".format(p.name), actor=p.idx)
         return p.deck.pop() if p.deck else None
 
     def _draw_item(self, p: Player, silent: bool = False) -> Optional[Card]:
@@ -468,20 +490,20 @@ class Game:
                 p.bench[i] = None
                 self._stand_battle(p, m)
                 if not silent:
-                    self._say("🔀 {}：ベンチの {} がバトル場へ".format(p.name, self._nm(m)))
+                    self._say("🔀 {}：ベンチの {} がバトル場へ".format(p.name, self._nm(m)), actor=p.idx)
             elif candidates and self.winner is None:
                 if p.idx not in self.pending_promote:
                     self.pending_promote.append(p.idx)
                     # 進行が止まる理由が分からないと不安なので、両者に知らせる。
                     # 何を選んでいるかは伏せたまま「選択中」だけを伝える。
                     if not silent:
-                        self._say("🤔 {}：バトル場へ出すカードを選んでいます…".format(p.name))
+                        self._say("🤔 {}：バトル場へ出すカードを選んでいます…".format(p.name), actor=p.idx)
             elif instant:
                 card = self._draw_enemy(p)
                 if card:
                     self._stand_battle(p, self._spawn(p, card))
                     if not silent:
-                        self._say("🆕 {}：バトル場に {} が登場".format(p.name, self._nm(p.battle)))
+                        self._say("🆕 {}：バトル場に {} が登場".format(p.name, self._nm(p.battle)), actor=p.idx)
                     self._on_enter(p, p.battle, silent)
 
         if instant:
@@ -562,22 +584,22 @@ class Game:
             m.base_atk = DEMON["atk"]
             m.base_def = DEMON["def"]
             m.demon_turns = DEMON["turns"]
-            self._say("👹 {} が魔王を降臨させた！（{}ターンで消滅）".format(p.name, DEMON["turns"]))
+            self._say("👹 {} が魔王を降臨させた！（{}ターンで消滅）".format(p.name, DEMON["turns"]), actor=p.idx)
         elif aid == "H_K_holy":
             v = AV["H_K_trainer_heal"]
             p.trainer_hp = min(p.trainer_hp_max, p.trainer_hp + v)
-            self._say("✨ 聖王の加護：{} のトレーナーHPが{}回復".format(p.name, v))
+            self._say("✨ 聖王の加護：{} のトレーナーHPが{}回復".format(p.name, v), actor=p.idx)
         elif aid == "C_Q_scheme":
             for _ in range(AV["C_Q_draw"]):
                 self._draw_item(p, silent=True)
-            self._say("📜 策謀のクイーン：{} がアイテムを{}枚引いた".format(p.name, AV["C_Q_draw"]))
+            self._say("📜 策謀のクイーン：{} がアイテムを{}枚引いた".format(p.name, AV["C_Q_draw"]), actor=p.idx)
         elif aid == "C_A_sage":
             n = 0
             while len(p.hand) < B["hand_size_max"]:
                 if self._draw_item(p, silent=True) is None:
                     break
                 n += 1
-            self._say("🔮 賢者：{} がアイテムを{}枚補充".format(p.name, n))
+            self._say("🔮 賢者：{} がアイテムを{}枚補充".format(p.name, n), actor=p.idx)
 
     # ============================================================ ターン進行
     def _begin_turn(self):
@@ -665,10 +687,12 @@ class Game:
             if m and m.bench_turns_left is not None:
                 m.bench_turns_left -= 1
                 if m.bench_turns_left <= 0:
+                    # 誰かの操作ではなく自動の期限切れなので中立（actor=None）
                     self._say_hidden(
                         p,
                         "⌛ {} はベンチにいられる期限が切れて退場".format(self._nm(m)),
-                        "⌛ {} のベンチのキャラクターが1体、期限切れで退場".format(p.name))
+                        "⌛ {} のベンチのキャラクターが1体、期限切れで退場".format(p.name),
+                        actor=None)
                     self._remove(p, m, to_discard=True)
 
         if self.winner is None:
@@ -910,7 +934,7 @@ class Game:
             while self.pending_choice:
                 self._do_pick({"index": self._cpu_best_pick()})
             return
-        self._say("🤔 {}：{}".format(p.name, title))
+        self._say("🤔 {}：{}".format(p.name, title), actor=p.idx)
 
     def _cpu_best_pick(self) -> int:
         """CPU の選び方。エネミーは強いもの、アイテムは適当に先頭。"""
@@ -946,7 +970,7 @@ class Game:
                 # ベンチが埋まってしまっていたら（理論上は _item_usable で防いでいるはず）
                 # 捨て札に戻す
                 p.discard.append(card)
-                self._say("🚫 蘇生の秘薬：ベンチに空きがなく復活できなかった")
+                self._say("🚫 蘇生の秘薬：ベンチに空きがなく復活できなかった", actor=p.idx)
             else:
                 m = self._spawn(p, card)
                 m.hp = m.hp_max = ch["hp_fixed"]
@@ -1022,7 +1046,7 @@ class Game:
         self._stand_battle(p, m)
         self.pending_promote.remove(seat)
         # バトル場は公開領域なので、カード名を出してよい
-        self._say("🔀 {}：ベンチの {} をバトル場へ出した".format(p.name, self._nm(m)))
+        self._say("🔀 {}：ベンチの {} をバトル場へ出した".format(p.name, self._nm(m)), actor=p.idx)
         self._check_end()
         return True
 
@@ -1071,7 +1095,7 @@ class Game:
             coming = p.bench[i]
             p.bench[i] = p.battle
             self._stand_battle(p, coming)
-            self._say("🔄 {}：{} と交代".format(p.name, self._nm(p.battle)))
+            self._say("🔄 {}：{} と交代".format(p.name, self._nm(p.battle)), actor=p.idx)
         elif t == "place":
             i = action.get("hand", -1)
             slot = action.get("slot")
@@ -1082,7 +1106,7 @@ class Game:
                     return False
                 card = p.enemy_hand.pop(i)
                 self._stand_battle(p, self._spawn(p, card))
-                self._say("🆕 {}：バトル場に {} が登場".format(p.name, self._nm(p.battle)))
+                self._say("🆕 {}：バトル場に {} が登場".format(p.name, self._nm(p.battle)), actor=p.idx)
                 self._on_enter(p, p.battle)
             elif isinstance(slot, int) and 0 <= slot < len(p.bench) and p.bench[slot] is None:
                 card = p.enemy_hand.pop(i)
@@ -1138,7 +1162,7 @@ class Game:
         self._fx("attack", attacker=a, target=o.battle,
                  title="⚔️ {} の こうげき".format(self._nm(a)), cry=cry, tone="attack")
         # 誰が仕掛けたのかが一目で分かるよう、名乗りを上げてから斬りかかる
-        self._say("🗣️ {}「{}」".format(p.name, cry))
+        self._say("🗣️ {}「{}」".format(p.name, cry), actor=p.idx)
 
         # 直接攻撃（相手の場が空）
         if o.battle is None:
@@ -1146,41 +1170,41 @@ class Game:
                 atk += AV["S_J_reckless_bonus"]
             o.trainer_hp -= atk
             self._say("💥 {} の {} が直接攻撃！{} のトレーナーに{}ダメージ".format(
-                p.name, self._nm(a), o.name, atk))
+                p.name, self._nm(a), o.name, atk), actor=p.idx)
         else:
             d = o.battle
             dfn = self._effective_def(o, d)
             if aid == "D_Q_pierce":
                 dfn = int(dfn * AV["D_Q_pierce_rate"])
                 self._say("🗡️ ピアススピア：相手の防御を{}%として計算".format(
-                    int(AV["D_Q_pierce_rate"] * 100)))
+                    int(AV["D_Q_pierce_rate"] * 100)), actor=p.idx)
             if aid == "S_J_reckless":
                 atk += AV["S_J_reckless_bonus"]
             dmg = max(B["min_damage"], atk - dfn)
             self._say("⚔️ {} の {}（攻{}）→ {} の {}（防{}）に {}ダメージ".format(
-                p.name, self._nm(a), atk, o.name, self._nm(d), dfn, dmg))
+                p.name, self._nm(a), atk, o.name, self._nm(d), dfn, dmg), actor=p.idx)
 
             # 攻撃時の追加効果
             if aid == "D_K_destroyer":
                 v = AV["D_K_trainer_damage"]
                 o.trainer_hp -= v
-                self._say("💀 破壊王：{} のトレーナーにも{}ダメージ".format(o.name, v))
+                self._say("💀 破壊王：{} のトレーナーにも{}ダメージ".format(o.name, v), actor=p.idx)
             if aid == "S_Q_poison":
                 d.poison = max(d.poison, AV["S_Q_poison"])
-                self._say("☠️ ポイズンクイーン：{} が毒状態に".format(self._nm(d)))
+                self._say("☠️ ポイズンクイーン：{} が毒状態に".format(self._nm(d)), actor=p.idx)
             if aid == "C_J_disturb":
                 d.fatigue = max(d.fatigue, B["fatigue_turns"])
-                self._say("🌀 トリックスター：{} を疲労させた".format(self._nm(d)))
+                self._say("🌀 トリックスター：{} を疲労させた".format(self._nm(d)), actor=p.idx)
             if aid == "D_J_splash":
                 v = AV["D_J_splash"]
                 for bm in [m for m in o.bench if m]:
                     self._damage_enemy(o, bm, v, source="デュアルブレイド", by_opponent=True)
-                self._say("🌪️ デュアルブレイド：相手ベンチ全体に{}ダメージ".format(v))
+                self._say("🌪️ デュアルブレイド：相手ベンチ全体に{}ダメージ".format(v), actor=p.idx)
             if aid == "S_A_demon" and a.is_demon and DEMON.get("splash", 0) > 0:
                 v = DEMON["splash"]
                 for bm in [m for m in o.bench if m]:
                     self._damage_enemy(o, bm, v, source="多重展開", by_opponent=True)
-                self._say("🟢 多重展開（マルチプル）：相手ベンチ全体に{}ダメージ".format(v))
+                self._say("🟢 多重展開（マルチプル）：相手ベンチ全体に{}ダメージ".format(v), actor=p.idx)
 
             self._damage_enemy(o, d, dmg, source="攻撃", by_opponent=True)
 
@@ -1207,7 +1231,7 @@ class Game:
         if a.is_demon and a.demon_turns > 0:
             a.demon_turns -= 1
             if a.demon_turns <= 0:
-                self._say("👹 {} の魔王が力を使い果たして消滅した".format(p.name))
+                self._say("👹 {} の魔王が力を使い果たして消滅した".format(p.name), actor=p.idx)
                 self._remove(p, a, to_discard=True)
                 return
 
@@ -1217,7 +1241,7 @@ class Game:
             a.fragile_atk = 0
             if "伝説の剣" in a.equipment:
                 a.equipment.remove("伝説の剣")
-            self._say("💔 伝説の剣が砕け散った")
+            self._say("💔 伝説の剣が砕け散った", actor=p.idx)
 
         # 次の攻撃だけの一時修正値（技の威力アップ／相手からの弱体化）は、
         # 1回攻撃したらリセットする
@@ -1226,17 +1250,17 @@ class Game:
         # 疲労と強制退場
         a.attacks_used += 1
         if aid == "D_A_onehit":
-            self._say("☄️ 一撃必殺：{} は役目を終えて退場".format(self._nm(a)))
+            self._say("☄️ 一撃必殺：{} は役目を終えて退場".format(self._nm(a)), actor=p.idx)
             self._remove(p, a, to_discard=True)
             return
         if aid != "S_K_tyrant":
             a.fatigue = B["fatigue_turns"]
-            self._say("😴 {} は疲労した".format(self._nm(a)))
+            self._say("😴 {} は疲労した".format(self._nm(a)), actor=p.idx)
         else:
-            self._say("👑 暴君は疲労しない")
+            self._say("👑 暴君は疲労しない", actor=p.idx)
 
         if a.attacks_used >= B["attacks_before_retire"]:
-            self._say("🚪 {} は{}回攻撃したので強制退場".format(self._nm(a), a.attacks_used))
+            self._say("🚪 {} は{}回攻撃したので強制退場".format(self._nm(a), a.attacks_used), actor=p.idx)
             self._remove(p, a, to_discard=True)
 
     # ---------------------------------------------------- 三つ巴：第三勢力戦
@@ -1256,18 +1280,18 @@ class Game:
         cry = "いけっ、{}！".format(a.card.name if not a.is_demon else "魔王")
         self._fx("attack", attacker=a, target=d,
                  title="⚔️ {} の こうげき".format(self._nm(a)), cry=cry, tone="attack")
-        self._say("🗣️ {}「{}」".format(p.name, cry))
+        self._say("🗣️ {}「{}」".format(p.name, cry), actor=p.idx)
 
         dfn = d.base_def + d.def_bonus
         if aid == "D_Q_pierce":
             dfn = int(dfn * AV["D_Q_pierce_rate"])
             self._say("🗡️ ピアススピア：第三勢力の防御を{}%として計算".format(
-                int(AV["D_Q_pierce_rate"] * 100)))
+                int(AV["D_Q_pierce_rate"] * 100)), actor=p.idx)
         if aid == "S_J_reckless":
             atk += AV["S_J_reckless_bonus"]
         dmg = max(B["min_damage"], atk - dfn)
         self._say("⚔️ {} の {}（攻{}）→ 第三勢力 {}（防{}）に {}ダメージ".format(
-            p.name, self._nm(a), atk, self._nm(d), dfn, dmg))
+            p.name, self._nm(a), atk, self._nm(d), dfn, dmg), actor=p.idx)
         self._damage_third_force(p, dmg)
 
         # 反動ダメージ
@@ -1292,26 +1316,36 @@ class Game:
         m.hp -= dmg
         if m.hp > 0:
             return
-        self._say("☠️ 第三勢力の {} が倒れた！".format(self._nm(m)))
+        # 第三勢力を倒したのは p の行動（攻撃）の結果なので actor=p.idx
+        self._say("☠️ 第三勢力の {} が倒れた！".format(self._nm(m)), actor=p.idx)
         tf.discard.append(m.card)
         tf.enemy = None
         if tf.deck:
             card = tf.deck.pop()
-            e = self._spawn_third_force_enemy(card)
             # ベンチに空きがあるか確認して配置
             placed = False
             for i in range(len(p.bench)):
                 if p.bench[i] is None:
+                    e = self._spawn_third_force_enemy(card)
                     p.bench[i] = e
                     self._say("🎖️ {} が {} のベンチスロット {} に配置された！（残り{}体）".format(
-                        self._nm(e), p.name, i + 1, len(tf.deck)))
+                        self._nm(e), p.name, i + 1, len(tf.deck)), actor=p.idx)
                     placed = True
                     break
             if not placed:
-                # ベンチが満杯なら手札に追加
-                p.enemy_hand.append(e)
-                self._say("📥 {} が {} のキャラクター手札に追加された！（残り{}体）".format(
-                    self._nm(e), p.name, len(tf.deck)))
+                # ベンチが満杯なら手札に追加。
+                # ⚠️ enemy_hand は Card のリスト（まだ場に出していない札）。
+                # Enemy（第三勢力用に強化済みのインスタンス）をそのまま入れると
+                # 型が合わず、legal_actions() で c.label 参照時に落ちる
+                # （2026-09-12 発覚：ベンチ満杯時に third_force 報酬を受け取ると
+                #  以後の合法手一覧生成でクラッシュしていたバグ）。
+                # 手札に戻す以上は「まだ場に出ていない札」に過ぎないので、
+                # 第三勢力用の強化ステータス（HP/攻防ボーナス）は場に出す
+                # （_spawn_third_force_enemy を呼ぶ）タイミングまで持ち越さず、
+                # 素の card のまま持たせる。
+                p.enemy_hand.append(card)
+                self._say("📥 {}{} が {} のキャラクター手札に追加された！（残り{}体）".format(
+                    card.label, card.name, p.name, len(tf.deck)), actor=p.idx)
         else:
             tf.defeated = True
             self.winner = p.idx
@@ -1344,14 +1378,23 @@ class Game:
             dmg = max(B["min_damage"], atk - dfn)
             self._say("⚔️ 第三勢力の攻撃（攻{}）→ {} の {}（防{}）に {}ダメージ".format(
                 atk, target.name, self._nm(d), dfn, dmg))
-            self._damage_enemy(target, d, dmg, source="第三勢力", by_opponent=True)
+            # 第三勢力はどちらのプレイヤーでもないので中立扱い（actor=None）
+            self._damage_enemy(target, d, dmg, source="第三勢力", by_opponent=True,
+                                actor=None)
         self._check_end()
 
     # ------------------------------------------------------ ダメージ／退場
     def _damage_enemy(self, owner: Player, m: Enemy, dmg: int,
-                        source: str = "", by_opponent: bool = True):
+                        source: str = "", by_opponent: bool = True,
+                        actor: object = _AUTO_ACTOR):
         if dmg <= 0 or m.hp <= 0:
             return
+        # actor省略時：by_opponent=True なら「相手がやった」ので相手の席番号、
+        # False なら「自分自身の行動（反動・代償など）」なので owner 自身。
+        # 第三勢力がらみのダメージ（相手プレイヤーの仕業ではない）は、呼び出し側で
+        # actor=None を明示して中立扱いにする。
+        if actor is _AUTO_ACTOR:
+            actor = (1 - owner.idx) if by_opponent else owner.idx
         # シールド系（応急処置・白銀の秘薬など）の消費処理。
         # flat軽減を先に適用し、残りを半減する（両方セットされていた場合の順序）。
         if m.shield_flat > 0:
@@ -1361,14 +1404,16 @@ class Game:
             self._say_visible(
                 owner, m,
                 "🛡️ {} がシールドで{}ダメージ軽減".format(self._nm(m), reduced),
-                "🛡️ {} のベンチのキャラクターがシールドでダメージ軽減".format(owner.name))
+                "🛡️ {} のベンチのキャラクターがシールドでダメージ軽減".format(owner.name),
+                actor=actor)
         if m.shield_half:
             dmg = dmg // 2
             m.shield_half = False
             self._say_visible(
                 owner, m,
                 "🛡️ {} がシールドでダメージ半減".format(self._nm(m)),
-                "🛡️ {} のベンチのキャラクターがシールドでダメージ半減".format(owner.name))
+                "🛡️ {} のベンチのキャラクターがシールドでダメージ半減".format(owner.name),
+                actor=actor)
         if dmg <= 0:
             return
         m.hp -= dmg
@@ -1378,22 +1423,29 @@ class Game:
                 "🩸 {} の {} が{}の継続ダメージで{}ダメージ".format(
                     owner.name, self._nm(m), source, dmg),
                 "🩸 {} のベンチのキャラクターが{}の継続ダメージで{}ダメージ".format(
-                    owner.name, source, dmg))
+                    owner.name, source, dmg),
+                actor=actor)
         if m.hp <= 0:
-            self._defeat(owner, m, by_opponent)
+            self._defeat(owner, m, by_opponent, actor=actor)
 
-    def _say_visible(self, owner: Player, m: Enemy, mine: str, theirs: str):
+    def _say_visible(self, owner: Player, m: Enemy, mine: str, theirs: str,
+                      actor: object = _AUTO_ACTOR):
         """エネミーの居場所に応じてログの見せ方を切り替える。
 
         バトル場は公開情報なのでそのまま全員に出す。
         ベンチは伏せ札なので、相手にはカード名を伏せた `theirs` を出す。
         """
+        if actor is _AUTO_ACTOR:
+            actor = owner.idx
         if owner.battle is m:
-            self._say(mine)
+            self._say(mine, actor=actor)
         else:
-            self._say_hidden(owner, mine, theirs)
+            self._say_hidden(owner, mine, theirs, actor=actor)
 
-    def _defeat(self, owner: Player, m: Enemy, by_opponent: bool):
+    def _defeat(self, owner: Player, m: Enemy, by_opponent: bool,
+                actor: object = _AUTO_ACTOR):
+        if actor is _AUTO_ACTOR:
+            actor = (1 - owner.idx) if by_opponent else owner.idx
         # 不死鳥：1度だけ全快で復活
         if m.ability_id == "H_A_phoenix" and not m.revived:
             m.revived = True
@@ -1402,18 +1454,20 @@ class Game:
             self._say_visible(
                 owner, m,
                 "🔥 不死鳥が蘇った！{} はHP全快で復活".format(self._nm(m)),
-                "🔥 {} のベンチで不死鳥が蘇った".format(owner.name))
+                "🔥 {} のベンチで不死鳥が蘇った".format(owner.name),
+                actor=actor)
             return
         self._say_visible(
             owner, m,
             "☠️ {} の {} が倒れた".format(owner.name, self._nm(m)),
-            "☠️ {} のベンチのキャラクターが1体倒れた".format(owner.name))
+            "☠️ {} のベンチのキャラクターが1体倒れた".format(owner.name),
+            actor=actor)
         # 撃破ダメージは「倒れた」の直後に出す。
         # 先に _remove すると、そこから出る繰り上げの案内が間に割り込んでしまう。
         if by_opponent:
             v = B["kill_trainer_damage"]
             owner.trainer_hp -= v
-            self._say("💢 {} のトレーナーに{}ダメージ".format(owner.name, v))
+            self._say("💢 {} のトレーナーに{}ダメージ".format(owner.name, v), actor=actor)
         self._remove(owner, m, to_discard=True)
 
     def _remove(self, owner: Player, m: Enemy, to_discard: bool = True):
@@ -1430,9 +1484,9 @@ class Game:
     def _use_item(self, p: Player, o: Player, c: Card):
         e = c.effect
         t, v = e.type, e.value
-        self._say("🎒 {} が「{}」を使用".format(p.name, c.name))
+        self._say("🎒 {} が「{}」を使用".format(p.name, c.name), actor=p.idx)
         if e.cry:
-            self._say("🗣️ {}「{}」".format(p.name, e.cry))
+            self._say("🗣️ {}「{}」".format(p.name, e.cry), actor=p.idx)
         # 画面中央に大きく出す。色は効果の性質で分ける（赤=攻め / 緑=癒し / 青=強化）
         self._fx("item", title="🎒 {}".format(c.name), cry=e.cry,
                  tone=ITEM_TONE.get(t, "buff"))
@@ -1440,44 +1494,44 @@ class Game:
         if t == "heal":
             p.battle.hp = min(p.battle.hp_max, p.battle.hp + v)
             self._say("💚 {} のHPが{}回復（{}/{}）".format(
-                self._nm(p.battle), v, p.battle.hp, p.battle.hp_max))
+                self._nm(p.battle), v, p.battle.hp, p.battle.hp_max), actor=p.idx)
         elif t == "full_heal":
             p.battle.hp = p.battle.hp_max
             p.battle.poison = 0
-            self._say("💚 {} のHPが全回復".format(self._nm(p.battle)))
+            self._say("💚 {} のHPが全回復".format(self._nm(p.battle)), actor=p.idx)
         elif t == "trainer_heal":
             p.trainer_hp = min(p.trainer_hp_max, p.trainer_hp + v)
-            self._say("✨ トレーナーHPが{}回復（{}）".format(v, p.trainer_hp))
+            self._say("✨ トレーナーHPが{}回復（{}）".format(v, p.trainer_hp), actor=p.idx)
         elif t == "weapon":
             p.battle.atk_bonus += v
             p.battle.equipment.append("{}(+{})".format(c.name, v))
-            self._say("🗡️ {} の攻撃+{}".format(self._nm(p.battle), v))
+            self._say("🗡️ {} の攻撃+{}".format(self._nm(p.battle), v), actor=p.idx)
         elif t == "armor":
             p.battle.def_bonus += v
             p.battle.equipment.append("{}(+{})".format(c.name, v))
-            self._say("🛡️ {} の防御+{}".format(self._nm(p.battle), v))
+            self._say("🛡️ {} の防御+{}".format(self._nm(p.battle), v), actor=p.idx)
         elif t == "weapon_cursed":
             p.battle.atk_bonus += v
             p.battle.curse += e.extra
             p.battle.equipment.append("魔剣(+{})".format(v))
-            self._say("🗡️ {} の攻撃+{}（毎ターン{}の自傷）".format(self._nm(p.battle), v, e.extra))
+            self._say("🗡️ {} の攻撃+{}（毎ターン{}の自傷）".format(self._nm(p.battle), v, e.extra), actor=p.idx)
         elif t == "weapon_fragile":
             p.battle.atk_bonus += v
             p.battle.fragile_atk += v
             p.battle.equipment.append("伝説の剣")
-            self._say("⚔️ {} の攻撃+{}（1回攻撃で壊れる）".format(self._nm(p.battle), v))
+            self._say("⚔️ {} の攻撃+{}（1回攻撃で壊れる）".format(self._nm(p.battle), v), actor=p.idx)
         elif t == "burn":
-            self._say("🔥 {} に{}ダメージ".format(self._nm(o.battle), v))
+            self._say("🔥 {} に{}ダメージ".format(self._nm(o.battle), v), actor=p.idx)
             # 直前のアイテム演出に、被弾の相手を書き足す（別の演出にはしない）
             if self.fx:
                 self.fx["target"] = o.battle.uid
             self._damage_enemy(o, o.battle, v, source="呪符", by_opponent=True)
             if e.extra and p.battle:
-                self._say("🩸 反動で自分の {} に{}ダメージ".format(self._nm(p.battle), e.extra))
+                self._say("🩸 反動で自分の {} に{}ダメージ".format(self._nm(p.battle), e.extra), actor=p.idx)
                 self._damage_enemy(p, p.battle, e.extra, source="反動", by_opponent=False)
         elif t == "poison":
             o.battle.poison = max(o.battle.poison, v)
-            self._say("☠️ {} が毒状態に（毎ターン{}）".format(self._nm(o.battle), v))
+            self._say("☠️ {} が毒状態に（毎ターン{}）".format(self._nm(o.battle), v), actor=p.idx)
         elif t == "atk_down":
             # スキン独自効果（例：転スラの「暴食者」）。相手のバトル場の攻撃力を
             # 一定ターンの間だけ下げる。二重掛けはターン数を上書きするだけ
@@ -1487,7 +1541,7 @@ class Game:
                 target.atk_bonus -= v
                 target.atk_debuff = v
             target.atk_debuff_turns = max(target.atk_debuff_turns, e.extra)
-            self._say("📉 {} の攻撃力が{}ターンの間 -{}".format(self._nm(target), e.extra, v))
+            self._say("📉 {} の攻撃力が{}ターンの間 -{}".format(self._nm(target), e.extra, v), actor=p.idx)
         elif t == "def_down":
             # atk_down と対の、スキン独自効果（例：まどマギの「呪詛」系アイテム）。
             # 相手のバトル場の防御力を一定ターンの間だけ下げる。仕組みはatk_downと同じ。
@@ -1496,22 +1550,22 @@ class Game:
                 target.def_bonus -= v
                 target.def_debuff = v
             target.def_debuff_turns = max(target.def_debuff_turns, e.extra)
-            self._say("📉 {} の防御力が{}ターンの間 -{}".format(self._nm(target), e.extra, v))
+            self._say("📉 {} の防御力が{}ターンの間 -{}".format(self._nm(target), e.extra, v), actor=p.idx)
         elif t == "stun":
             # エネミーではなくプレイヤーを縛る。交代で逃げられないように。
             o.stunned = True
-            self._say("🌀 {} は次のターン、攻撃も交代もできない".format(o.name))
+            self._say("🌀 {} は次のターン、攻撃も交代もできない".format(o.name), actor=p.idx)
         elif t == "cure_fatigue":
             p.battle.fatigue = 0
-            self._say("⚡ {} の疲労が回復".format(self._nm(p.battle)))
+            self._say("⚡ {} の疲労が回復".format(self._nm(p.battle)), actor=p.idx)
         elif t == "free_swap":
             p.swaps_left += 1
-            self._say("🔄 交代権を1回追加")
+            self._say("🔄 交代権を1回追加", actor=p.idx)
         elif t == "deploy":
             # 山札の上から数枚めくって、その中から選ぶ。
             # 山札全部から選べると欲しいカードが必ず来てしまうので、候補を絞る。
             if len(p.enemy_hand) >= B["enemy_hand_size_max"]:
-                self._say("🚫 号令：キャラクター手札が上限で追加できなかった")
+                self._say("🚫 号令：キャラクター手札が上限で追加できなかった", actor=p.idx)
             else:
                 look = [c for c in (self._draw_enemy(p)
                                     for _ in range(B["look_at_cards"])) if c]
@@ -1522,7 +1576,7 @@ class Game:
             # 代償：自分のトレーナーHPを削る（自滅しても構わない禁忌の力という位置づけ）
             cost = DIVINE["cost_hp"]
             p.trainer_hp -= cost
-            self._say("🩸 代償：{} のトレーナーHP-{}（残り{}）".format(p.name, cost, p.trainer_hp))
+            self._say("🩸 代償：{} のトレーナーHP-{}（残り{}）".format(p.name, cost, p.trainer_hp), actor=p.idx)
 
             # ベンチのエネミーは失われない。エネミー手札に戻して温存する
             # （収まりきらない分だけ、やむを得ず捨て札へ）
@@ -1557,7 +1611,7 @@ class Game:
             # 代償：自分のトレーナーHPを削る（禁忌の力という位置づけは神軍降臨と同じ）
             cost = DEMONA["cost_hp"]
             p.trainer_hp -= cost
-            self._say("🩸 代償：{} のトレーナーHP-{}（残り{}）".format(p.name, cost, p.trainer_hp))
+            self._say("🩸 代償：{} のトレーナーHP-{}（残り{}）".format(p.name, cost, p.trainer_hp), actor=p.idx)
 
             # ベンチのエネミーは失われない。エネミー手札に戻して温存する
             returned = []
@@ -1593,7 +1647,7 @@ class Game:
             # 軽量版。既存のベンチのエネミーは失われない（空き枠に置くだけ）。
             empty = next((i for i, m in enumerate(p.bench) if m is None), None)
             if empty is None:
-                self._say("🚫 ベンチに空きがなく召喚できなかった")
+                self._say("🚫 ベンチに空きがなく召喚できなかった", actor=p.idx)
             else:
                 key = self.rng.choice(GOD_ARMY_KEYS)
                 god = self._spawn_god(p, key)
@@ -1616,7 +1670,7 @@ class Game:
         elif t == "revive":
             # 捨て札は中身が分かっているので、こちらは全部から自由に選べる
             if len(p.enemy_hand) >= B["enemy_hand_size_max"]:
-                self._say("🚫 蘇生：キャラクター手札が上限で戻せなかった")
+                self._say("🚫 蘇生：キャラクター手札が上限で戻せなかった", actor=p.idx)
             else:
                 enemies = [x for x in p.discard if x.kind == "enemy"]
                 for x in enemies:
@@ -1625,18 +1679,18 @@ class Game:
                                    enemies, 1, "enemy_hand")
         elif t == "sacrifice":
             target = p.battle
-            self._say("🩸 生贄の儀式：{} を捧げた".format(self._nm(target)))
+            self._say("🩸 生贄の儀式：{} を捧げた".format(self._nm(target)), actor=p.idx)
             self._remove(p, target, to_discard=True)
             o.trainer_hp -= v
-            self._say("💢 {} のトレーナーに{}ダメージ".format(o.name, v))
+            self._say("💢 {} のトレーナーに{}ダメージ".format(o.name, v), actor=p.idx)
         elif t == "forbidden":
             p.trainer_hp -= v
-            self._say("🕯️ 禁断の契約：自分のトレーナーHP-{}".format(v))
+            self._say("🕯️ 禁断の契約：自分のトレーナーHP-{}".format(v), actor=p.idx)
             target = o.battle
             if target:
                 # 相手のエネミーを葬った扱い。倒したのはこちらなので
                 # 相手トレーナーにも撃破ダメージが入る（_remove では入らない）
-                self._say("🌑 {} を葬り去った".format(self._nm(target)))
+                self._say("🌑 {} を葬り去った".format(self._nm(target)), actor=p.idx)
                 self._defeat(o, target, by_opponent=True)
         # ---------------------------------------------------------------
         # ここから下は、アルカナスキンの item_effect_overrides で新しく
@@ -1655,13 +1709,13 @@ class Game:
                 p.battle.def_debuff = 0
                 p.battle.def_debuff_turns = 0
             self._say("💚 {} のHPが{}回復し、状態異常が治った（{}/{}）".format(
-                self._nm(p.battle), v, p.battle.hp, p.battle.hp_max))
+                self._nm(p.battle), v, p.battle.hp, p.battle.hp_max), actor=p.idx)
         elif t == "shield_flat":
             p.battle.shield_flat = v
-            self._say("🛡️ {} は次に受けるダメージを{}軽減する".format(self._nm(p.battle), v))
+            self._say("🛡️ {} は次に受けるダメージを{}軽減する".format(self._nm(p.battle), v), actor=p.idx)
         elif t == "shield_half":
             p.battle.shield_half = True
-            self._say("🛡️ {} は次に受けるダメージを半減する".format(self._nm(p.battle)))
+            self._say("🛡️ {} は次に受けるダメージを半減する".format(self._nm(p.battle)), actor=p.idx)
         elif t == "def_buff_turns":
             # atk_down の防御・正版。二重掛けはターン上書きのみ（量は重ねない）
             target = p.battle
@@ -1669,19 +1723,19 @@ class Game:
                 target.def_bonus += v
                 target.def_buff = v
             target.def_buff_turns = max(target.def_buff_turns, e.extra)
-            self._say("📈 {} の防御力が{}ターンの間 +{}".format(self._nm(target), e.extra, v))
+            self._say("📈 {} の防御力が{}ターンの間 +{}".format(self._nm(target), e.extra, v), actor=p.idx)
         elif t == "atk_buff_turns":
             target = p.battle
             if target.atk_buff_turns <= 0:
                 target.atk_bonus += v
                 target.atk_buff = v
             target.atk_buff_turns = max(target.atk_buff_turns, e.extra)
-            self._say("📈 {} の攻撃力が{}ターンの間 +{}".format(self._nm(target), e.extra, v))
+            self._say("📈 {} の攻撃力が{}ターンの間 +{}".format(self._nm(target), e.extra, v), actor=p.idx)
         elif t == "revive_field_fixed_hp":
             # 捨て札からエネミーを1体選ばせ、手札を経由せずベンチへ直接
             # HP固定で復活させる（蘇生の秘薬）
             if not any(m is None for m in p.bench):
-                self._say("🚫 蘇生の秘薬：ベンチに空きがなく復活できなかった")
+                self._say("🚫 蘇生の秘薬：ベンチに空きがなく復活できなかった", actor=p.idx)
             else:
                 enemies = [x for x in p.discard if x.kind == "enemy"]
                 for x in enemies:
@@ -1692,17 +1746,17 @@ class Game:
         elif t == "weapon_and_atk_down":
             p.battle.atk_bonus += v
             p.battle.equipment.append("{}(+{})".format(c.name, v))
-            self._say("🗡️ {} の攻撃+{}".format(self._nm(p.battle), v))
+            self._say("🗡️ {} の攻撃+{}".format(self._nm(p.battle), v), actor=p.idx)
             target = o.battle
             if target.atk_debuff_turns <= 0:
                 target.atk_bonus -= e.extra
                 target.atk_debuff = e.extra
             target.atk_debuff_turns = max(target.atk_debuff_turns, 2)
-            self._say("📉 {} の攻撃力が2ターンの間 -{}".format(self._nm(target), e.extra))
+            self._say("📉 {} の攻撃力が2ターンの間 -{}".format(self._nm(target), e.extra), actor=p.idx)
         elif t == "atk_down_single":
             # ターン経過に関係なく、相手が次に1回攻撃するときだけ弱める
             o.battle.next_attack_bonus -= v
-            self._say("📉 {} の次の攻撃力が-{}".format(self._nm(o.battle), v))
+            self._say("📉 {} の次の攻撃力が-{}".format(self._nm(o.battle), v), actor=p.idx)
         elif t == "peek_hand":
             if not o.enemy_hand:
                 self._say_hidden(
@@ -1716,13 +1770,13 @@ class Game:
                     "👀 {} に手札を覗かれた".format(p.name))
         elif t == "next_move_power":
             p.battle.next_attack_bonus += v
-            self._say("💪 {} の次の技の威力+{}".format(self._nm(p.battle), v))
+            self._say("💪 {} の次の技の威力+{}".format(self._nm(p.battle), v), actor=p.idx)
         elif t == "peek_reorder_deck":
             look = []
             for _ in range(min(3, len(p.deck))):
                 look.append(p.deck.pop())
             if not look:
-                self._say("🚫 絶対障壁：山札が空で並べ替えられなかった")
+                self._say("🚫 絶対障壁：山札が空で並べ替えられなかった", actor=p.idx)
             else:
                 self._begin_choice(p, "deck_top",
                                    "絶対障壁：山札の上から{}枚を見て、1枚を一番上に置く".format(len(look)),
@@ -1732,10 +1786,10 @@ class Game:
             p.battle.def_bonus += e.extra
             p.battle.equipment.append("{}(攻+{})".format(c.name, v))
             p.battle.equipment.append("{}(防+{})".format(c.name, e.extra))
-            self._say("🗡️🛡️ {} の攻撃+{}・防御+{}".format(self._nm(p.battle), v, e.extra))
+            self._say("🗡️🛡️ {} の攻撃+{}・防御+{}".format(self._nm(p.battle), v, e.extra), actor=p.idx)
         elif t == "return_used_item":
             if not self.item_discard:
-                self._say("🚫 気付け薬：捨て札にアイテムが無かった")
+                self._say("🚫 気付け薬：捨て札にアイテムが無かった", actor=p.idx)
             else:
                 look = list(self.item_discard)
                 self.item_discard = []
@@ -1748,80 +1802,80 @@ class Game:
                 target.atk_bonus -= target.atk_buff
                 target.atk_buff = 0
                 target.atk_buff_turns = 0
-                self._say("🌀 入れ替え：{} の攻撃力アップを打ち消した".format(self._nm(target)))
+                self._say("🌀 入れ替え：{} の攻撃力アップを打ち消した".format(self._nm(target)), actor=p.idx)
             elif target.def_buff_turns > 0:
                 target.def_bonus -= target.def_buff
                 target.def_buff = 0
                 target.def_buff_turns = 0
-                self._say("🌀 入れ替え：{} の防御力アップを打ち消した".format(self._nm(target)))
+                self._say("🌀 入れ替え：{} の防御力アップを打ち消した".format(self._nm(target)), actor=p.idx)
             else:
-                self._say("🌀 入れ替え：打ち消すバフが無かった")
+                self._say("🌀 入れ替え：打ち消すバフが無かった", actor=p.idx)
         elif t == "weapon_self_cost":
             p.battle.atk_bonus += v
             p.battle.equipment.append("{}(+{})".format(c.name, v))
-            self._say("🗡️ {} の攻撃+{}".format(self._nm(p.battle), v))
-            self._say("🩸 代償：自分の {} に{}ダメージ".format(self._nm(p.battle), e.extra))
+            self._say("🗡️ {} の攻撃+{}".format(self._nm(p.battle), v), actor=p.idx)
+            self._say("🩸 代償：自分の {} に{}ダメージ".format(self._nm(p.battle), e.extra), actor=p.idx)
             self._damage_enemy(p, p.battle, e.extra, source="禁術の代償", by_opponent=False)
         elif t == "weapon_armor_self_cost":
             p.battle.atk_bonus += v
             p.battle.def_bonus += e.extra
             p.battle.equipment.append("{}(攻+{})".format(c.name, v))
             p.battle.equipment.append("{}(防+{})".format(c.name, e.extra))
-            self._say("🗡️🛡️ {} の攻撃+{}・防御+{}".format(self._nm(p.battle), v, e.extra))
-            self._say("🩸 代償：自分の {} に{}ダメージ".format(self._nm(p.battle), e.extra2))
+            self._say("🗡️🛡️ {} の攻撃+{}・防御+{}".format(self._nm(p.battle), v, e.extra), actor=p.idx)
+            self._say("🩸 代償：自分の {} に{}ダメージ".format(self._nm(p.battle), e.extra2), actor=p.idx)
             self._damage_enemy(p, p.battle, e.extra2, source="禁術の代償", by_opponent=False)
         elif t == "heal_self_lock":
             p.battle.hp = min(p.battle.hp_max, p.battle.hp + v)
             p.battle.attack_locked = True
             self._say("💚 {} のHPが{}回復（{}/{}）。代償として次のターン攻撃できない".format(
-                self._nm(p.battle), v, p.battle.hp, p.battle.hp_max))
+                self._nm(p.battle), v, p.battle.hp, p.battle.hp_max), actor=p.idx)
         elif t == "weapon_self_defdown":
             p.battle.atk_bonus += v
             p.battle.def_bonus -= e.extra
             p.battle.equipment.append("{}(攻+{})".format(c.name, v))
             p.battle.equipment.append("{}(防-{})".format(c.name, e.extra))
-            self._say("🗡️ {} の攻撃+{}・防御-{}".format(self._nm(p.battle), v, e.extra))
+            self._say("🗡️ {} の攻撃+{}・防御-{}".format(self._nm(p.battle), v, e.extra), actor=p.idx)
         elif t == "atk_down_mutual":
             target = o.battle
             if target.atk_debuff_turns <= 0:
                 target.atk_bonus -= v
                 target.atk_debuff = v
             target.atk_debuff_turns = max(target.atk_debuff_turns, 2)
-            self._say("📉 {} の攻撃力が2ターンの間 -{}".format(self._nm(target), v))
+            self._say("📉 {} の攻撃力が2ターンの間 -{}".format(self._nm(target), v), actor=p.idx)
             p.battle.next_attack_bonus -= e.extra
-            self._say("🩸 代償：自分の次の攻撃力-{}".format(e.extra))
+            self._say("🩸 代償：自分の次の攻撃力-{}".format(e.extra), actor=p.idx)
         elif t == "armor_self_penalty":
             p.battle.def_bonus += v
             p.battle.equipment.append("{}(+{})".format(c.name, v))
-            self._say("🛡️ {} の防御+{}".format(self._nm(p.battle), v))
+            self._say("🛡️ {} の防御+{}".format(self._nm(p.battle), v), actor=p.idx)
             p.battle.next_attack_bonus -= e.extra
-            self._say("🩸 代償：自分の次の攻撃力-{}".format(e.extra))
+            self._say("🩸 代償：自分の次の攻撃力-{}".format(e.extra), actor=p.idx)
         elif t == "next_move_power_self_cost":
             p.battle.next_attack_bonus += v
-            self._say("💪 {} の次の技の威力+{}".format(self._nm(p.battle), v))
-            self._say("🩸 代償：自分の {} に{}ダメージ".format(self._nm(p.battle), e.extra))
+            self._say("💪 {} の次の技の威力+{}".format(self._nm(p.battle), v), actor=p.idx)
+            self._say("🩸 代償：自分の {} に{}ダメージ".format(self._nm(p.battle), e.extra), actor=p.idx)
             self._damage_enemy(p, p.battle, e.extra, source="禁術の代償", by_opponent=False)
         elif t == "extra_item_use":
-            self._say("🩸 代償：自分の {} に{}ダメージ".format(self._nm(p.battle), v))
+            self._say("🩸 代償：自分の {} に{}ダメージ".format(self._nm(p.battle), v), actor=p.idx)
             self._damage_enemy(p, p.battle, v, source="禁術の代償", by_opponent=False)
             p.item_used = False
-            self._say("🎒 天罰の裁き符：このターン、もう1回アイテムを使える")
+            self._say("🎒 天罰の裁き符：このターン、もう1回アイテムを使える", actor=p.idx)
         elif t == "weapon_self_lock":
             p.battle.atk_bonus += v
             p.battle.equipment.append("{}(+{})".format(c.name, v))
-            self._say("🗡️ {} の攻撃+{}".format(self._nm(p.battle), v))
+            self._say("🗡️ {} の攻撃+{}".format(self._nm(p.battle), v), actor=p.idx)
             p.stunned = True
-            self._say("🩸 代償：{} は次のターン、攻撃も交代もできない".format(p.name))
+            self._say("🩸 代償：{} は次のターン、攻撃も交代もできない".format(p.name), actor=p.idx)
         elif t == "weapon_exclude":
             p.battle.atk_bonus += v
             p.battle.equipment.append("{}(+{})".format(c.name, v))
-            self._say("🗡️ {} の攻撃+{}".format(self._nm(p.battle), v))
+            self._say("🗡️ {} の攻撃+{}".format(self._nm(p.battle), v), actor=p.idx)
             # apply_action が既にこのカードを item_discard に積んでいるので、
             # そこから取り除いて item_removed へ移す（二度と山札に戻らない）
             if c in self.item_discard:
                 self.item_discard.remove(c)
             self.item_removed.append(c)
-            self._say("🕳️ {} はゲームから除外された".format(c.name))
+            self._say("🕳️ {} はゲームから除外された".format(c.name), actor=p.idx)
 
     # ================================================================== 終了
     def _check_end(self):
@@ -1915,7 +1969,9 @@ class Game:
             "finish_reason": self.finish_reason,
             # 自分に見せてよい行だけ残してから最後の60行を渡す。
             # 相手のベンチ・エネミー手札に触れる行はここで落ちる。
-            "log": [e.text for e in self.log
+            # actor（誰の行動か。0/1=席番号、None=中立）も一緒に渡し、
+            # 画面側で相手の行動だけ色を付けられるようにする。
+            "log": [{"text": e.text, "actor": e.actor} for e in self.log
                     if e.private_to is None or e.private_to == viewer][-60:],
             "fx": self.fx,
             # まだ攻撃を出せる余地があるか（"now" / "after_swap" / None）。

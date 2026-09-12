@@ -819,10 +819,17 @@ function render() {
   // --- ログ ---
   const logBox = $("logList");
   logBox.innerHTML = "";
-  (STATE.log || []).forEach((line, i, arr) => {
+  (STATE.log || []).forEach((entry, i, arr) => {
+    // entry は {text, actor} オブジェクト（actor: 0/1=席番号、null=中立）。
+    const text = (entry && typeof entry === "object") ? entry.text : entry;
+    const actor = (entry && typeof entry === "object") ? entry.actor : null;
     const d = document.createElement("div");
-    d.textContent = line;
-    if (line.indexOf("────") === 0) d.className = "turnline";
+    d.textContent = text;
+    if (text.indexOf("────") === 0) d.className = "turnline";
+    // 自分の行動＝白のまま。相手（敵）の行動だけ色を付けて目立たせる。
+    if (actor !== null && actor !== undefined && actor !== STATE.viewer) {
+      d.classList.add("log-enemy");
+    }
     if (i === arr.length - 1) d.classList.add("newest");
     logBox.appendChild(d);
   });

@@ -294,10 +294,14 @@ def apply_skin(skin_id: str = None) -> None:
 
     # ♣K「号令」は「神軍降臨」効果に差し替えてある（出現率を上げるため）。
     # 神軍降臨で召喚された上位互換エネミーは装備アイテムを使えない（共通ルール）。
+    # ⚠️ 説明文の「デッキ」は画面表示に合わせた呼び方（内部の実装上は
+    # p.bench＝ベンチだが、UI側は同じ場所を「デッキ」と表示している。
+    # 2026-09-12、振る舞い（デッキに3体召喚）と説明文（「ベンチに」）が
+    # 食い違っているとの指摘を受けて、説明文の方をUI表記に合わせて修正）。
     divine_army_text = (
         "{name}：自分のトレーナーHPが{trigger}以下のとき使用可。代償として自分のトレーナーHP-{cost}。"
-        "ベンチを一新し、J・Q・K の上位互換の{group}を3体ランダム召喚する"
-        "（元のベンチのキャラクターは失われず、キャラクター手札に戻る）。"
+        "デッキを一新し、J・Q・K の上位互換の{group}を3体ランダム召喚する"
+        "（元のデッキのキャラクターは失われず、キャラクター手札に戻る）。"
         "召喚された{group}は装備アイテム（武器・防具系のバフ）を使えない"
     ).format(name=IFN["CK"], trigger=BALANCE["divine_army"]["trigger_hp"],
              cost=BALANCE["divine_army"]["cost_hp"], group=DIVINE_ARMY_GROUP_NAME)
@@ -306,8 +310,8 @@ def apply_skin(skin_id: str = None) -> None:
     # 神軍降臨と違い相手トレーナーHPの条件はなく、いつでも使える禁忌の一手。
     demon_army_text = (
         "{name}：いつでも使用可。代償として自分のトレーナーHP-{cost}。"
-        "ベンチを一新し、♠♦の10・9・8 の上位互換の{group}を3体ランダム召喚する"
-        "（元のベンチのキャラクターは失われず、キャラクター手札に戻る）"
+        "デッキを一新し、♠♦の10・9・8 の上位互換の{group}を3体ランダム召喚する"
+        "（元のデッキのキャラクターは失われず、キャラクター手札に戻る）"
     ).format(name=IFN["SA"], cost=BALANCE["demon_army"]["cost_hp"], group=DEMON_ARMY_GROUP_NAME)
 
     ITEM_FACE.clear()

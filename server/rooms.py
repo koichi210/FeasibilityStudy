@@ -210,6 +210,8 @@ class Room:
                 # CPUの手がまだ残っている＝画面は演出を見せ終えたら続きを取りに来る
                 "cpu_thinking": self.cpu_thinking,
                 "my_skin": self.skins[seat],  # 自分のスキン
+                # ゲーム進行中（スキン変更を禁止するため）
+                "game_active": self.game is not None and self.game.winner is None,
             },
             "rev": self.rev,
         }

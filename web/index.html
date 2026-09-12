@@ -47,23 +47,23 @@
         <div class="counts" id="opCounts"></div>
       </div>
 
-      <div class="zone zone-bench">
-        <div class="zone-label">🛡️ デッキ</div>
-        <div class="slots" id="opBench"></div>
-      </div>
       <div class="zone zone-battle">
         <div class="zone-label">🏟️ バトル場</div>
         <div class="slots" id="opBattle"></div>
       </div>
-    </div>
-
-    <!-- ================= 三つ巴：第三勢力 ================= -->
-    <div class="zone zone-thirdforce hidden" id="thirdForceZone">
-      <div class="zone-label">🌩️ 第三勢力
-        <span class="hint" id="thirdForceHint">（クリックで攻撃）</span>
+      <div class="zone zone-bench">
+        <div class="zone-label">🛡️ デッキ</div>
+        <div class="slots" id="opBench"></div>
       </div>
-      <div class="slots" id="thirdForceSlot"></div>
-      <div class="tf-deck" id="thirdForceDeckCount"></div>
+
+      <!-- ================= 三つ巴：第三勢力（相手のデッキの横） ================= -->
+      <div class="zone zone-thirdforce hidden" id="thirdForceZone">
+        <div class="zone-label">🌩️ 第三勢力
+          <span class="hint" id="thirdForceHint">（クリックで攻撃）</span>
+        </div>
+        <div class="slots" id="thirdForceSlot"></div>
+        <div class="tf-deck" id="thirdForceDeckCount"></div>
+      </div>
     </div>
 
     <div class="divider"><span>VS</span></div>
@@ -158,8 +158,19 @@
 <div id="lobby" class="overlay lobby">
   <div class="lobbybox">
 
+    <!-- --- スキン選択（起動して最初に出る画面） --- -->
+    <div class="lobbyscreen active" id="lb-skin">
+      <div class="lobbytitle">🎴 アルカナエクスプロージョン</div>
+      <div class="lobbysub">🎨 カードの見た目を選んでね</div>
+      <div class="modes" id="skinModes"></div>
+      <div class="lobbyfoot">
+        <a href="/cards" target="_blank" rel="noopener" class="poplink">↗ カード図鑑を見る（今のスキン）</a>
+        <a href="/codex" target="_blank" rel="noopener" class="poplink">📖 全スキンの図鑑を見る</a>
+      </div>
+    </div>
+
     <!-- --- モード選択 --- -->
-    <div class="lobbyscreen active" id="lb-mode">
+    <div class="lobbyscreen" id="lb-mode">
       <div class="lobbytitle">🎴 アルカナエクスプロージョン</div>
       <div class="lobbysub">遊びかたを選んでね</div>
       <button id="btnResume" class="btn btn-attack resumebtn hidden">
@@ -180,10 +191,7 @@
           <div class="modedesc">同じネットワークの人と対戦。<br>相手に手札は見えません</div>
         </button>
       </div>
-      <div class="lobbyfoot">
-        <a href="/cards" target="_blank" rel="noopener" class="poplink">↗ カード図鑑を見る（今のスキン）</a>
-        <a href="/codex" target="_blank" rel="noopener" class="poplink">📖 全スキンの図鑑を見る</a>
-      </div>
+      <div class="lobbyfoot"><button class="btn btn-end" data-back="lb-skin">← スキンを選びなおす</button></div>
     </div>
 
     <!-- --- CPU対戦：強さ選択 --- -->
